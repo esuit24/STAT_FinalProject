@@ -1,0 +1,74 @@
+---
+title: "FinalProject"
+author: "Ellie Suit"
+date: "2023-12-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+# libraries 
+library(tidyverse)
+library(survival)
+library(rpart)
+library(rpart.plot)
+```
+
+
+```{r}
+library(randomForest)
+library(caret)
+trees <- read_csv("Tree_Data.csv")
+```
+
+Remove unwanted variables
+```{r}
+trees_clean <- trees %>%
+  select(-c(EMF, Alive, Harvest))
+
+rows <- seq(from = 1, to = nrow(trees), by = 1)
+row_nums <- as.data.frame(rows)
+
+trees_clean2 <- cbind(row_nums, trees_clean)
+```
+
+Create a single survival tree
+
+```{r}
+surv_tree <- rpart(Surv(Time, Event) ~.-rows, data = trees_clean)
+
+rpart.plot(surv_tree)
+```
+
+Results
+- Most important variables: Census, Phenolics, certain categories of adult trees, AMF
+```{r}
+# Calculate confusion matrix to summarize these results
+
+
+```
+
+
+```{r}
+library(ranger)
+rf <- ranger(Surv(Time, Event) ~.-No, data = trees_clean %>%na.omit(), importance = 'impurity')
+
+
+as.data.frame(rf$variable.importance) %>%
+  arrange(-rf$variable.importance)
+
+
+```
+
+
+
+
+
+
+
+
+
+
