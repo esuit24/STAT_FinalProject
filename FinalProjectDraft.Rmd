@@ -153,7 +153,7 @@ Because PCA only works with numerical variables, I had to remove the following v
 ```{r}
 # select necessary variables
 tree_pca <- trees %>%
-  select(-c(No, Plot, Subplot, Light_Cat, PlantDate, Census, Event, Harvest, Alive)) %>%
+  select(-c(No, Harvest, Alive)) %>%
   select_if(is.numeric) %>%
   na.omit()
 
