@@ -1,6 +1,6 @@
 ---
-title: "FinalProject"
-author: "Ellie Suit"
+title: "STAT0218 Final Project"
+author: "Ellie Suit, Andy Atallah, and Ai Hattori"
 date: "2023-12-06"
 output: html_document
 ---
@@ -9,21 +9,246 @@ output: html_document
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r}
+```{r, warning = F, message = F}
 # libraries 
 library(tidyverse)
 library(survival)
 library(rpart)
 library(rpart.plot)
+library(dendextend) # hierarchical clustering
+library(lubridate) # hierarchical clustering
+library(kernlab) # SVM
+library(e1071) # SVM
 ```
 
 
-```{r}
+```{r, warning = F, message = F}
 library(randomForest)
 library(caret)
 trees <- read_csv("Tree_Data.csv")
 ```
 
+# EDA: 
+
+Researchers conducted a field experiment, "consisting of four tree species, seven soil sources (sterilized conspecific, live conspecific, and five heterospecific), and a gradient of forest understory light levels (low, medium, and high)." 
+
+```{r}
+ggplot(data = trees, mapping = aes(x = Species)) + 
+  geom_bar(fill = "lightblue") +
+  labs(y = "Count", x = "Tree species",
+       title = "Number of trees by species")
+```
+
+```{r}
+tree_EDA <- trees %>%
+  mutate(SoilSource = paste(Sterile, ",", Conspecific))
+
+ggplot(data = tree_EDA, mapping = aes(x = SoilSource, fill = Species)) + 
+  # geom_bar(position = "fill") +
+  geom_bar() +
+  labs(y = "Count", x = "Soil source",
+       title = "Soil sources by species")
+```
+
+How to manually order x-axis on bar chart: https://community.rstudio.com/t/how-to-manually-order-x-axis-on-bar-chart/9601 was used for the following code.
+```{r}
+trees %>% 
+  mutate(Light_Cat = factor(Light_Cat, 
+                                    levels = c("Low", "Med", "High"))) %>% 
+  ggplot(mapping = aes(x = Light_Cat, fill = Species)) +
+  geom_bar() + 
+  labs(y = "Count", x = "Light level",
+       title = "Light levels by species")
+```
+#  Unsupervised learning: Hierarchical clustering
+
+How to select only numeric columns: https://www.geeksforgeeks.org/select-only-numeric-columns-from-dataframe-in-r/ 
+
+How to convert non-standard format of dates to standard format (YYYY-MM-DD): https://epirhandbook.com/en/working-with-dates.html
+
+Below, we conducted hierarchical clustering for numerical variables. Among the numerical variables, we did not include the following variables for the following reasons. 
+
+* No: because this is an ID number unique to each tree
+
+* Census: This is a "census number at which time the seedling died or was harvested." Since we do not have any information about what the census number means, we excluded the variable for all the analyses we did for this project. Hence, we did not include this variable in hierarchical clustering. 
+
+```{r, warning = F}
+# convert PlantDate in character format to date time object
+tree_hc <- trees %>% 
+  mutate(PlantDate = mdy(PlantDate)) %>% # change to standard format(Year-Month-Day)
+  mutate(PlantDateYear = year(PlantDate),
+          PlantDateMonth = month(PlantDate),
+          PlantDateDay = day(PlantDate))
+
+# scale tree data without the variable Census
+tree_scaled1 <- select_if(tree_hc, is.numeric) %>% # select only numeric columns
+                select(-c(No, Census)) 
+               
+# calculate all pairwise distances
+tree_distances1 <- dist(tree_scaled1)
+
+# Do hierarchical clustering
+hc1 <- tree_distances1 %>%
+  hclust() %>%
+  as.dendrogram() %>%
+  place_labels(tree$No) 
+
+plot(hc1) 
+title('Dendrogram without the variable Census')
+
+# scale tree data with the variable Census
+tree_scaled2 <- select_if(tree_hc, is.numeric) %>% # select only numeric columns
+                select(-c(No))
+     
+# calculate all pairwise distances
+tree_distances2 <- dist(tree_scaled2)
+
+# Do hierarchical clustering
+hc2 <- tree_distances2 %>%
+  hclust() %>%
+  as.dendrogram() %>%
+  place_labels(tree$No) 
+
+plot(hc2) 
+title('Dendrogram with the variable Census')
+
+# Cut this dendrogram at a certain height to identify outliers
+# cuts <- cutree(hc, h=120)
+# # 
+# tree_with_clusters <- trees %>%
+#    mutate(group = cuts)
+# # 
+# tree_with_clusters %>%
+#    filter(group == 2)
+```
+
+There is no split with only one terminal node in both dendrograms with or without the variable Census. 
+
+# PCA (and SVM for prediction)
+
+Use PCA to build a model that predicts the variable Time (the number of days at which time the seedling died or was harvested) by using the following variables:
+
+* Light ISF: the amount of light reaching each subplot at a height of 1m
+* Core: Year the soil core was removed from the field
+* AMF: Percent arbuscular mycorrhizal fungi colonization on the fine roots of harvested seedlings
+* EMF: Percent ectomycorrhizal fungi colonization on the root tips of harvested seedlings
+* Phenolics: nmol Gallic acid equivalents per mg dry extract
+* NSC: percent dry mass nonstructural carbohydrates
+* Lignin: percent dry mass lignin
+
+Because PCA only works with numerical variables, I had to remove the following variables but I think they should ideally be used for prediction:
+
+** Species
+** Soil: Species from which the soil core was taken 
+** Adult: individual tree that soil was taken from
+** Sterile: whether the soil was sterilized or not
+** Conspecific: whether the soil was conspecific, heterospecific, or sterlized conspecific
+** Myco: Mycorrhizal type of the seedling species (AMF or EMF)
+** SoilMyco: Mycorrhizal type of the species culturing the soil (AMF or EMF)
+
+
+(Variables which I think were fine to be removed: No, Plot, Subplot, Light Cat, PlantDate, Census, Event, Harvest, Alive - it did not make sense to include all of these given that our goal was to build a model that predicts Time)
+
+## Find loading score 
+```{r}
+# select necessary variables
+tree_pca <- trees %>%
+  select(-c(No, Plot, Subplot, Light_Cat, PlantDate, Census, Event, Harvest, Alive)) %>%
+  select_if(is.numeric) %>%
+  na.omit()
+
+# scale data and conduct PCA
+pca1 <- prcomp(tree_pca %>% select(-Time), scale = TRUE) # remove what you are predicting (Time)
+
+# the first PC (direction of the data along which the observations vary the most)
+sort(pca1$rotation[,1])
+```
+## Build a model to predict Time by using loading score
+
+SVM with Caret: https://rpubs.com/uky994/593668
+
+```{r}
+set.seed(1)
+
+# create a data frame with Time and loading score from the first PC
+tree_pca_subset <- data.frame(loading_score = pca1$x[,1]) %>% # score in PC1 for each tree
+  mutate(Time = tree_pca$Time)
+
+# model with linear kernel
+pca_model <- train(Time ~ loading_score,
+                  data = tree_pca_subset,
+                  method = "svmLinear",
+                  tuneGrid = expand.grid(C = c(0.25, 0.5, 1)),
+                  coob = TRUE) # calculate out-of-bag error
+pca_model
+
+# find the smallest RMSE
+pca_model$results[which.min(pca_model$results[,2]),]
+```
+
+With linear kernel, the smallest RMSE is approximately 41.2.
+
+```{r}
+set.seed(1)
+# model with radial kernel
+pca_model2 <- train(Time ~ loading_score,
+                  data = tree_pca_subset,
+                  method = "svmRadial",
+                  coob = TRUE) # calculate out-of-bag error
+pca_model2
+
+# find the smallest RMSE
+pca_model2$results[which.min(pca_model2$results[,3]),]
+```
+
+With radial kernel, the smallest RMSE is approximately 43.5.
+
+```{r}
+set.seed(1)
+# model with polynomial kernel
+pca_model3 <- train(Time ~ loading_score,
+                  data = tree_pca_subset,
+                  method = "svmPoly",
+                  coob = TRUE) # calculate out-of-bag error
+pca_model3
+
+# find the smallest RMSE
+pca_model3$results[which.min(pca_model3$results[,4]),]
+```
+With polynomial basis kernel, the smallest RMSE is 40.6.
+
+# Supervised learning: SVM
+
+Use multiple variables (instead of the single variable, PCA loading score) for SVM. 
+
+```{r}
+set.seed(1)
+tree_svm <- trees %>%
+  select(-c(No, Plot, Subplot, Light_Cat, PlantDate, Census, Event, Harvest, Alive)) %>%
+  mutate(Species = factor(Species),
+         Soil = factor(Soil),
+         Adult = factor(Adult),
+         Sterile = factor(Sterile),
+         Conspecific = factor(Conspecific),
+         # Myco = factor(Myco),
+         SoilMyco = factor(SoilMyco)) %>%
+  select(-c(AMF, EMF)) %>% # including AMF and EMF results in losing all observations with # Myco = AMF
+  na.omit()
+
+svm_model = train(Time ~ .,
+                  data = tree_svm,
+                  method = "svmLinear",
+                  tuneGrid = expand.grid(C = c(0.25, 0.5, 1)),
+                  coob = TRUE)
+svm_model
+
+# find the smallest RMSE
+svm_model$results[which.min(svm_model$results[,2]),]
+```
+SVM with variables in the dataset (instead of the loading score) results in the smallest RMSE of around 30.6.
+
+
+# Ellie's part
 Remove unwanted variables
 ```{r}
 trees_clean <- trees %>%
