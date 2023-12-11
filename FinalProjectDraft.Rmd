@@ -19,6 +19,10 @@ library(dendextend) # hierarchical clustering
 library(lubridate) # hierarchical clustering
 library(kernlab) # SVM
 library(e1071) # SVM
+library(ranger)
+
+# set a seed
+set.seed(1)
 ```
 
 
@@ -30,25 +34,35 @@ trees <- read_csv("Tree_Data.csv")
 
 # EDA: 
 
-Researchers conducted a field experiment, "consisting of four tree species, seven soil sources (sterilized conspecific, live conspecific, and five heterospecific), and a gradient of forest understory light levels (low, medium, and high)." 
+The dataset in this report comes from the article "tree seedling functional traits mediate plant-soil feedback survival responses across a gradient of light availability" by Wood et al. In the article, the researchers conducted a field experiment, "consisting of four tree species, seven soil sources (sterilized conspecific, live conspecific, and five heterospecific), and a gradient of forest understory light levels (low, medium, and high)." 
+
+As Fig. 1 shows, each of the four species has a similar number of trees. 
 
 ```{r}
 ggplot(data = trees, mapping = aes(x = Species)) + 
   geom_bar(fill = "lightblue") +
   labs(y = "Count", x = "Tree species",
-       title = "Number of trees by species")
+       title = "Figure 1. Number of trees by species")
 ```
 
-```{r}
-tree_EDA <- trees %>%
-  mutate(SoilSource = paste(Sterile, ",", Conspecific))
+In the research, two controlled conditions for the seedlings were soil sources and light availability. For soil sources, if the soil cores were collected beneath a tree of the same species as the seedling, it is called *conspecific* soil. If a conspecific soil was sterilized, then it is called *sterilized*. If the soil core was collected from beneath a tree of a different specie than the seedling, then it is called *heterospecific}. Fig. 2 shows the distribution of the soil sources segmented by tree species. In Fig. 2, within each type of soil source, tree species are nearly evenly distributed. However, the figure also indicates that Heterospecific soil was more common than Conspecific or Sterilized. 
 
-ggplot(data = tree_EDA, mapping = aes(x = SoilSource, fill = Species)) + 
+```{r}
+# change the order of levels in Conspecific to make the plot easier to understand
+tree_EDA <- trees %>%
+  mutate(Conspecific = factor(Conspecific,
+                              levels = c("Conspecific",
+                                         "Sterilized",
+                                         "Heterospecific")))
+
+ggplot(data = tree_EDA, mapping = aes(x = Conspecific, fill = Species)) + 
   # geom_bar(position = "fill") +
   geom_bar() +
   labs(y = "Count", x = "Soil source",
-       title = "Soil sources by species")
+       title = "Figure 2. Soil sources by species")
 ```
+
+Fig. 3 does the same thing as above for the light levels. In the data collection process, light availability was initially measured as a continuous variable by using Indirect Site Factor (SF) which is the proportion of solar radiation at a given location relative to an open site (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0293906#sec002). Then, the range of the ISF value was split into three partitions of equal length and three categories of light level (low, medium, and high) were created. Fig. 3 is a distribution of those three light levels segmented by species. Similar to Fig. 2, within each light availability, the number of the seedlings is about the same for all the four species. Yet, more seedlings had the low or medium light level than high. 
 
 How to manually order x-axis on bar chart: https://community.rstudio.com/t/how-to-manually-order-x-axis-on-bar-chart/9601 was used for the following code.
 ```{r}
@@ -58,76 +72,34 @@ trees %>%
   ggplot(mapping = aes(x = Light_Cat, fill = Species)) +
   geom_bar() + 
   labs(y = "Count", x = "Light level",
-       title = "Light levels by species")
-```
-#  Unsupervised learning: Hierarchical clustering
-
-How to select only numeric columns: https://www.geeksforgeeks.org/select-only-numeric-columns-from-dataframe-in-r/ 
-
-How to convert non-standard format of dates to standard format (YYYY-MM-DD): https://epirhandbook.com/en/working-with-dates.html
-
-Below, we conducted hierarchical clustering for numerical variables. Among the numerical variables, we did not include the following variables for the following reasons. 
-
-* No: because this is an ID number unique to each tree
-
-* Census: This is a "census number at which time the seedling died or was harvested." Since we do not have any information about what the census number means, we excluded the variable for all the analyses we did for this project. Hence, we did not include this variable in hierarchical clustering. 
-
-```{r, warning = F}
-# convert PlantDate in character format to date time object
-tree_hc <- trees %>% 
-  mutate(PlantDate = mdy(PlantDate)) %>% # change to standard format(Year-Month-Day)
-  mutate(PlantDateYear = year(PlantDate),
-          PlantDateMonth = month(PlantDate),
-          PlantDateDay = day(PlantDate))
-
-# scale tree data without the variable Census
-tree_scaled1 <- select_if(tree_hc, is.numeric) %>% # select only numeric columns
-                select(-c(No, Census)) 
-               
-# calculate all pairwise distances
-tree_distances1 <- dist(tree_scaled1)
-
-# Do hierarchical clustering
-hc1 <- tree_distances1 %>%
-  hclust() %>%
-  as.dendrogram() %>%
-  place_labels(tree$No) 
-
-plot(hc1) 
-title('Dendrogram without the variable Census')
-
-# scale tree data with the variable Census
-tree_scaled2 <- select_if(tree_hc, is.numeric) %>% # select only numeric columns
-                select(-c(No))
-     
-# calculate all pairwise distances
-tree_distances2 <- dist(tree_scaled2)
-
-# Do hierarchical clustering
-hc2 <- tree_distances2 %>%
-  hclust() %>%
-  as.dendrogram() %>%
-  place_labels(tree$No) 
-
-plot(hc2) 
-title('Dendrogram with the variable Census')
-
-# Cut this dendrogram at a certain height to identify outliers
-# cuts <- cutree(hc, h=120)
-# # 
-# tree_with_clusters <- trees %>%
-#    mutate(group = cuts)
-# # 
-# tree_with_clusters %>%
-#    filter(group == 2)
+       title = "Figure 3. Light levels by species")
 ```
 
-There is no split with only one terminal node in both dendrograms with or without the variable Census. 
+In the dendrogram in Fig. 4, there is no split with only one terminal node, which suggests that there is no outlier that should be removed for data analysis.
 
-# PCA (and SVM for prediction)
+# Principal Component Analysis for Random Forest
 
-Use PCA to build a model that predicts the variable Time (the number of days at which time the seedling died or was harvested) by using the following variables:
+In this section, we first calculated principal components of numerical variables that may have impacted tree's survival and built a random forest model that used them as a predictor variable for the survival object of Time (the number of days at which time the seedling died or the experiment ended) and Event (status of each seedling at a given time; 0 for alive and 1 for dead).
 
+Because PCA only works with numerical variables, we first removed categorical variables shown in below. 
+
+** Species
+** Light Cat
+** Soil: Species from which the soil core was taken 
+** Adult: individual tree that soil was taken from
+** Sterile: whether the soil was sterilized or not
+** Conspecific: whether the soil was conspecific, heterospecific, or sterlized conspecific
+** Myco: Mycorrhizal type of the seedling species (AMF or EMF)
+** SoilMyco: Mycorrhizal type of the species culturing the soil (AMF or EMF)
+** Event: this was our outcome variable
+
+After that, we also removed four numerical variables: No, Harvest, Alive, and Time. The variable No is a unique ID attached to each seedling, thus, it should not have influenced tree survival. Moreover, the variables Harvest and Alive are related to what happened to seedlings that were still alive at the end of the experiment, so we reasoned that they would not have impacted tree survival. Lastly, the variable Time was removed from the calculation of loading scores because it was our outcome variable.
+
+In short, we calculated loading scores by using the following variables. 
+
+* Plot
+* Subplot
+* PlantDate
 * Light ISF: the amount of light reaching each subplot at a height of 1m
 * Core: Year the soil core was removed from the field
 * AMF: Percent arbuscular mycorrhizal fungi colonization on the fine roots of harvested seedlings
@@ -135,117 +107,85 @@ Use PCA to build a model that predicts the variable Time (the number of days at 
 * Phenolics: nmol Gallic acid equivalents per mg dry extract
 * NSC: percent dry mass nonstructural carbohydrates
 * Lignin: percent dry mass lignin
-
-Because PCA only works with numerical variables, I had to remove the following variables but I think they should ideally be used for prediction:
-
-** Species
-** Soil: Species from which the soil core was taken 
-** Adult: individual tree that soil was taken from
-** Sterile: whether the soil was sterilized or not
-** Conspecific: whether the soil was conspecific, heterospecific, or sterlized conspecific
-** Myco: Mycorrhizal type of the seedling species (AMF or EMF)
-** SoilMyco: Mycorrhizal type of the species culturing the soil (AMF or EMF)
-
-
-(Variables which I think were fine to be removed: No, Plot, Subplot, Light Cat, PlantDate, Census, Event, Harvest, Alive - it did not make sense to include all of these given that our goal was to build a model that predicts Time)
+* Census
 
 ## Find loading score 
 ```{r}
+# convert PlantDate in character format to date time object
+tree_pca <- trees %>% 
+  mutate(PlantDate = mdy(PlantDate)) %>% # change to standard format(Year-Month-Day)
+  mutate(PlantDateYear = year(PlantDate),
+          PlantDateMonth = month(PlantDate),
+          PlantDateDay = day(PlantDate)) %>%
+  select(-PlantDate)
+
 # select necessary variables
 tree_pca <- trees %>%
   select(-c(No, Harvest, Alive)) %>%
   select_if(is.numeric) %>%
   na.omit()
 
+colnames(tree_pca)
+
 # scale data and conduct PCA
-pca1 <- prcomp(tree_pca %>% select(-Time), scale = TRUE) # remove what you are predicting (Time)
+pca1 <- prcomp(tree_pca %>% select(-c(Event, Time)), scale = TRUE) # remove what we are predicting (Event and Time)
 
 # the first PC (direction of the data along which the observations vary the most)
-sort(pca1$rotation[,1])
+# sort(pca1$rotation[,1])
 ```
-## Build a model to predict Time by using loading score
 
-SVM with Caret: https://rpubs.com/uky994/593668
+The scree plot below indicates that the first seven principal components explain more than 80% of variance in the selected numerical variables. It also shows that the eighth and ninth principal components explain less than 10% of variance in those numerical variables. 
 
 ```{r}
-set.seed(1)
+# Variance explained by each component
+pca1$sdev^2/ncol(tree_pca %>% select(-Event)) 
 
-# create a data frame with Time and loading score from the first PC
-tree_pca_subset <- data.frame(loading_score = pca1$x[,1]) %>% # score in PC1 for each tree
-  mutate(Time = tree_pca$Time)
-
-# model with linear kernel
-pca_model <- train(Time ~ loading_score,
-                  data = tree_pca_subset,
-                  method = "svmLinear",
-                  tuneGrid = expand.grid(C = c(0.25, 0.5, 1)),
-                  coob = TRUE) # calculate out-of-bag error
-pca_model
-
-# find the smallest RMSE
-pca_model$results[which.min(pca_model$results[,2]),]
+plot(1:length(pca1$rotation[,1]), 
+     cumsum(pca1$sdev^2/ncol(tree_pca %>% select(-Event))),
+     xlab = "Number of principal components",
+     ylab = "Cumulative % of variance explained") 
+title("Scree plot for PCA")
 ```
 
-With linear kernel, the smallest RMSE is approximately 41.2.
+## Build a random forest model to predict survival object of Time and Event by loading scores
+
+After finding loading scores, we used them to build a random forest model that predicted the survival object of Time and Event. We chose random forest as our supervised learning technique because we did not know which loading score(s) had the most importance in predicting the survival object. 
 
 ```{r}
-set.seed(1)
-# model with radial kernel
-pca_model2 <- train(Time ~ loading_score,
-                  data = tree_pca_subset,
-                  method = "svmRadial",
-                  coob = TRUE) # calculate out-of-bag error
-pca_model2
+# Create a vector of loading scores from all the PCs
+loading_score_vec <- pca1$x
 
-# find the smallest RMSE
-pca_model2$results[which.min(pca_model2$results[,3]),]
+# Create a dataset of loading scores, Event, and Time
+tree_subset <- data.frame(loading_score_vec) %>%
+  mutate(Event = tree_pca$Event,
+         Time = tree_pca$Time) 
+
+# Survival tree (single tree)
+# surv_tree_1 <- rpart(Surv(Time, Event) ~ .,
+#                      data = subset2)
+# rpart.plot(surv_tree_1, cex = 1)
+
+# Build a random forest model 
+rf_test<- ranger(Surv(Time, Event) ~., 
+             data = tree_subset,
+             importance = 'impurity')
+rf_test
+
+# Plot variable importance
+barplot(rf_test$variable.importance,
+        xlab = "Variable",
+        ylab = "Importance")
+title("Variable importance for the random forest model with loading scores")
+
+# Alternative: rfsrc function
+# rf_test2 <- randomForestSRC::rfsrc(Surv(Time, Event) ~.,
+#                   data = subset2,
+#                   importance = TRUE)
+# rf_test2
+# rf_test2$importance
 ```
 
-With radial kernel, the smallest RMSE is approximately 43.5.
-
-```{r}
-set.seed(1)
-# model with polynomial kernel
-pca_model3 <- train(Time ~ loading_score,
-                  data = tree_pca_subset,
-                  method = "svmPoly",
-                  coob = TRUE) # calculate out-of-bag error
-pca_model3
-
-# find the smallest RMSE
-pca_model3$results[which.min(pca_model3$results[,4]),]
-```
-With polynomial basis kernel, the smallest RMSE is 40.6.
-
-# Supervised learning: SVM
-
-Use multiple variables (instead of the single variable, PCA loading score) for SVM. 
-
-```{r}
-set.seed(1)
-tree_svm <- trees %>%
-  select(-c(No, Plot, Subplot, Light_Cat, PlantDate, Census, Event, Harvest, Alive)) %>%
-  mutate(Species = factor(Species),
-         Soil = factor(Soil),
-         Adult = factor(Adult),
-         Sterile = factor(Sterile),
-         Conspecific = factor(Conspecific),
-         # Myco = factor(Myco),
-         SoilMyco = factor(SoilMyco)) %>%
-  select(-c(AMF, EMF)) %>% # including AMF and EMF results in losing all observations with # Myco = AMF
-  na.omit()
-
-svm_model = train(Time ~ .,
-                  data = tree_svm,
-                  method = "svmLinear",
-                  tuneGrid = expand.grid(C = c(0.25, 0.5, 1)),
-                  coob = TRUE)
-svm_model
-
-# find the smallest RMSE
-svm_model$results[which.min(svm_model$results[,2]),]
-```
-SVM with variables in the dataset (instead of the loading score) results in the smallest RMSE of around 30.6.
+Prediction error: "Prediction error is calculated using OOB data. [...] For survival, prediction error is measured by 1-C, where C is Harrell's (Harrell et al., 1982) concordance index. Prediction error is between 0 and 1, and measures how well the predictor correctly ranks (classifies) two random individuals in terms of survival. A value of 0.5 is no better than random guessing. A value of 0 is perfect." (https://www.rdocumentation.org/packages/randomForestSRC/versions/1.0.0/topics/rfsrc)
 
 
 # Ellie's part
