@@ -3,13 +3,15 @@ title: "STAT0218 Final Project"
 author: "Ellie Suit, Andy Atallah, and Ai Hattori"
 date: "2023-12-06"
 output: html_document
+editor_options: 
+  chunk_output_type: console
 ---
 
 ```{r setup, include=FALSE}
 knitr::opts_chunk$set(echo = TRUE)
 ```
 
-```{r, warning = F, message = F}
+```{r load packages, warning = F, message = F}
 # libraries 
 library(tidyverse)
 library(survival)
@@ -19,14 +21,17 @@ library(dendextend) # hierarchical clustering
 library(lubridate) # hierarchical clustering
 library(kernlab) # SVM
 library(e1071) # SVM
-library(ranger)
+library(ranger) # RF
+library(caret) # test of SVM
+library(LiblineaR) # caret SVM testing
+library(kernlab) # caret SVM testing
+library(survivalsvm) # functional SVM 
 
 # set a seed
 set.seed(1)
 ```
 
-
-```{r, warning = F, message = F}
+```{r load data, warning = F, message = F}
 library(randomForest)
 library(caret)
 trees <- read_csv("Tree_Data.csv")
@@ -216,7 +221,6 @@ Results
 
 ```
 
-
 ```{r}
 library(ranger)
 rf <- ranger(Surv(Time, Event) ~.-No, data = trees_clean %>%na.omit(), importance = 'impurity')
@@ -228,9 +232,120 @@ as.data.frame(rf$variable.importance) %>%
 
 ```
 
+## Andy: Survival function
 
+After preparing data, we can use the `Surv` function on the dataset to create a survival object to be used in various functions. We supply the time and event variables (Time and Event respectively) for survival analysis.
 
+```{r Data preparation}
+tree <- read.csv("Tree_Data.csv") 
 
+# Remove unwanted variables
+tree <- tree %>% select(-No, -Harvest, -Alive, -Adult)
+
+# Convert all NA EMF values to 0 with researchers' blessing
+tree$EMF[is.na(tree$EMF)] <- 0
+
+# Check for remaining NA values
+str_which(tree$EMF, "NA")
+
+# convert PlantDate in character format to date time object
+tree <- tree %>% 
+  mutate(PlantDate = mdy(PlantDate)) %>% # change to standard format(Year-Month-Day)
+  mutate(PlantDateYear = year(PlantDate),
+          PlantDateMonth = month(PlantDate),
+          PlantDateDay = day(PlantDate)) %>%
+  select(-PlantDate)
+
+# Factor variables
+tree <- tree %>%
+  mutate(Species = factor(Species)) %>%
+  mutate(Soil = factor(Soil)) %>%
+  mutate(Conspecific = factor(Conspecific)) %>%
+  mutate(Subplot = factor(Subplot)) %>%
+  mutate(Light_Cat = factor(Light_Cat)) %>%
+  mutate(Sterile = factor(Sterile)) %>%
+  mutate(Myco = factor(Myco)) %>%
+  mutate(SoilMyco = factor(SoilMyco))
+  
+# Create a survival object
+tree_surv <- Surv(time=tree$Time, event=tree$Event)
+```
+
+The survival object can first be used in the `survfit` function. We first implemented this function in class with no covariates, which was indicated with a `1` in the formula term reserved for predictors. The resulting survival curve shows an extremely slight decrease in estimated probability of survival at about 15 days and a sharp decrease at about 25 days. Quick exploration of relevant variables can be achieved via Kaggle. Indeed, just 3 observations carry time values of 14, and all of these seedlings seem to have died based on their event value of 1. Many more trees have a time value of 24.5 days, corresponding to a census value of 7. There are no census values less than 4, which signifies that the researchers did not harvest nor note the death of any seedling prior to 14 days into the growing season.
+
+Using the rationale that decreases in survival probability relate to censuses when the researchers assessed the mortality of trees and harvested certain individuals, other periods of heightened risk include 42 days (census 12), 45 days (census 13). By this stage of the growing season, probability of survival has decreased to approximately 60%. The probability decreases to approximately 30% before leveling out for the final 40-odd days of the growing season. Due to the fact that seedling survival was not observed each day, it is not likely that all trees which were noted to have died at census 13 died on day 45; some may have died on days 43 and 44. That is the nature of the data, however, and it was noted in class that survival curves take on a stepwise shape.
+
+In general, this curve indicates that survival is not likely to be compromised at the very start of the growing season and that surviving plants enjoy a risk-deficient period of time about 80 days into the growing season where mortality is relatively unlikely. The most risky periods for the study trees are found from approximately 20 to 45 days into the season; probability of survival decreases by about 40% in this period and 30% in the following 35 days. 
+
+```{r Survival curve}
+# Survival curve with no covariates
+surv_fit_tree_base <- survfit(tree_surv~1)
+
+# Survival curve
+plot(surv_fit_tree_base)
+```
+
+We can also try fitting covariates to the survival curve. (Coming later)
+
+```{r}
+# Survival curve with covariates
+```
+
+The Cox proportional hazards model is also possible to implement using a survival object. Using variables which have been selected to present a signficant p-value. (Will describe more later)
+
+```{r Coxph}
+# Coxph
+coxph_tree <- coxph(Surv(Time, Event) ~ Species + Conspecific + SoilMyco + Phenolics, Sterile,
+                      data=tree)
+
+coxph_tree
+
+# The risk is only 67% of the original for a 1 unit increase in phenolics
+# Good vars: Species, Con, SoilMyco, Phenolics
+```
+
+## Andy: SVM with survival object
+
+We have used support vector machines for datasets with many possible predictor variables. It thus seems prudent to try to use SVM for this problem. Upon testing SVM with the `caret` package, which we have done before in class using a value of "svmLinear2" for the `method` argument, the `train` function does not seem to be able to work. This is likely because we have passed in a survival object as `x` instead of the typical single predictor, for the error is "Invalid operation on a survival time". Altering the method to one of the other SVM methods included as options in caret also does not work, and the `e1071` package itself predictably fails as well. 
+
+```{r SVM}
+# Caret package does not support survival models
+svm_tree <- train(Surv(Time, Event)~., data=tree %>% na.omit(), method="svmLinear2")
+
+# e1071 package also throws an error
+svm_tree <- svm(Surv(Time, Event)~.-PlantDateYear, data=tree)
+
+# Other caret methods testing
+svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="svmPoly")
+svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="lssvmRadial")
+svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="lssvmPoly")
+svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="svmLinear3")
+svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="svmBoundrangeString")
+```
+
+We can instead use the `survivalsvm` package to predict survival time and receive a concordance index value to compare with other models.
+
+```{r survivalSVM}
+set.seed(1)
+
+# Split data
+train_rows <- sample(1:nrow(tree), size=nrow(tree)/2)
+
+# Create train and test subsets
+train <- tree[train_rows,]
+test <- tree[-train_rows,]
+
+# survivalsvm function
+svm_tree <- survivalsvm(Surv(Time, Event)~.-PlantDateYear, data=train, type="vanbelle1", diff.meth="makediff1", gamma.mu=1)
+
+# predictions using the resulting object
+svm_pred <- predict(svm_tree, newdata=test)
+
+# get c-index value
+svm_c <- conindex(svm_pred, test$Time)
+
+svm_c
+```
 
 
 
