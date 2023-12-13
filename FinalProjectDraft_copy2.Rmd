@@ -1,0 +1,248 @@
+---
+title: "STAT0218 Final Project"
+author: "Ellie Suit, Andy Atallah, and Ai Hattori"
+date: "2023-12-06"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r, warning = F, message = F}
+# libraries 
+library(tidyverse)
+library(survival)
+library(rpart)
+library(rpart.plot)
+library(dendextend) # hierarchical clustering
+library(lubridate) # hierarchical clustering
+library(kernlab) # SVM
+library(e1071) # SVM
+library(ranger)
+
+# set a seed
+set.seed(1)
+```
+
+
+```{r, warning = F, message = F}
+library(randomForest)
+library(caret)
+trees <- read_csv("Tree_Data.csv")
+```
+
+# EDA: 
+
+The dataset in this report comes from the article "tree seedling functional traits mediate plant-soil feedback survival responses across a gradient of light availability" by Wood et al. In the article, the researchers conducted a field experiment, "consisting of four tree species, seven soil sources (sterilized conspecific, live conspecific, and five heterospecific), and a gradient of forest understory light levels (low, medium, and high)." 
+
+As Fig. 1 shows, each of the four species has a similar number of trees. 
+
+```{r}
+ggplot(data = trees, mapping = aes(x = Species)) + 
+  geom_bar(fill = "lightblue") +
+  labs(y = "Count", x = "Tree species",
+       title = "Figure 1. Number of trees by species")
+```
+
+In the research, two controlled conditions for the seedlings were soil sources and light availability. For soil sources, if the soil cores were collected beneath a tree of the same species as the seedling, it is called *conspecific* soil. If a conspecific soil was sterilized, then it is called *sterilized*. If the soil core was collected from beneath a tree of a different specie than the seedling, then it is called *heterospecific}. Fig. 2 shows the distribution of the soil sources segmented by tree species. In Fig. 2, within each type of soil source, tree species are nearly evenly distributed. However, the figure also indicates that Heterospecific soil was more common than Conspecific or Sterilized. 
+
+```{r}
+# change the order of levels in Conspecific to make the plot easier to understand
+tree_EDA <- trees %>%
+  mutate(Conspecific = factor(Conspecific,
+                              levels = c("Conspecific",
+                                         "Sterilized",
+                                         "Heterospecific")))
+
+ggplot(data = tree_EDA, mapping = aes(x = Conspecific, fill = Species)) + 
+  # geom_bar(position = "fill") +
+  geom_bar() +
+  labs(y = "Count", x = "Soil source",
+       title = "Figure 2. Soil sources by species")
+```
+
+Fig. 3 does the same thing as above for the light levels. In the data collection process, light availability was initially measured as a continuous variable by using Indirect Site Factor (SF) which is the proportion of solar radiation at a given location relative to an open site (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0293906#sec002). Then, the range of the ISF value was split into three partitions of equal length and three categories of light level (low, medium, and high) were created. Fig. 3 is a distribution of those three light levels segmented by species. Similar to Fig. 2, within each light availability, the number of the seedlings is about the same for all the four species. Yet, more seedlings had the low or medium light level than high. 
+
+How to manually order x-axis on bar chart: https://community.rstudio.com/t/how-to-manually-order-x-axis-on-bar-chart/9601 was used for the following code.
+```{r}
+trees %>% 
+  mutate(Light_Cat = factor(Light_Cat, 
+                                    levels = c("Low", "Med", "High"))) %>% 
+  ggplot(mapping = aes(x = Light_Cat, fill = Species)) +
+  geom_bar() + 
+  labs(y = "Count", x = "Light level",
+       title = "Figure 3. Light levels by species")
+```
+
+In the dendrogram in Fig. 4, there is no split with only one terminal node, which suggests that there is no outlier that should be removed for data analysis.
+
+# Principal Component Analysis for Random Forest
+
+In this section, we first calculated principal components of numerical variables that may have impacted tree's survival and built a random forest model that used them as a predictor variable for the survival object of Time (the number of days at which time the seedling died or the experiment ended) and Event (status of each seedling at a given time; 0 for alive and 1 for dead).
+
+Because PCA only works with numerical variables, we first removed categorical variables shown in below. 
+
+** Species
+** Light Cat
+** Soil: Species from which the soil core was taken 
+** Adult: individual tree that soil was taken from
+** Sterile: whether the soil was sterilized or not
+** Conspecific: whether the soil was conspecific, heterospecific, or sterlized conspecific
+** Myco: Mycorrhizal type of the seedling species (AMF or EMF)
+** SoilMyco: Mycorrhizal type of the species culturing the soil (AMF or EMF)
+** Event: this was our outcome variable
+
+After that, we also removed four numerical variables: No, Harvest, Alive, and Time. The variable No is a unique ID attached to each seedling, thus, it should not have influenced tree survival. Moreover, the variables Harvest and Alive are related to what happened to seedlings that were still alive at the end of the experiment, so we reasoned that they would not have impacted tree survival. Lastly, the variable Time was removed from the calculation of loading scores because it was our outcome variable.
+
+In short, we calculated loading scores by using the following variables. 
+
+* Plot
+* Subplot
+* PlantDate
+* Light ISF: the amount of light reaching each subplot at a height of 1m
+* Core: Year the soil core was removed from the field
+* AMF: Percent arbuscular mycorrhizal fungi colonization on the fine roots of harvested seedlings
+* EMF: Percent ectomycorrhizal fungi colonization on the root tips of harvested seedlings
+* Phenolics: nmol Gallic acid equivalents per mg dry extract
+* NSC: percent dry mass nonstructural carbohydrates
+* Lignin: percent dry mass lignin
+* Census
+
+## Find loading score 
+```{r}
+# convert PlantDate in character format to date time object
+tree_pca <- trees %>% 
+  mutate(PlantDate = mdy(PlantDate)) %>% # change to standard format(Year-Month-Day)
+  mutate(PlantDateYear = year(PlantDate),
+          PlantDateMonth = month(PlantDate),
+          PlantDateDay = day(PlantDate)) %>%
+  select(-PlantDate)
+
+# select necessary variables
+tree_pca <- trees %>%
+  select(-c(No, Harvest, Alive)) %>%
+  select_if(is.numeric) %>%
+  na.omit()
+
+colnames(tree_pca)
+
+# scale data and conduct PCA
+pca1 <- prcomp(tree_pca %>% select(-c(Event, Time)), scale = TRUE) # remove what we are predicting (Event and Time)
+
+# the first PC (direction of the data along which the observations vary the most)
+# sort(pca1$rotation[,1])
+```
+
+The scree plot below indicates that the first seven principal components explain more than 80% of variance in the selected numerical variables. It also shows that the eighth and ninth principal components explain less than 10% of variance in those numerical variables. 
+
+```{r}
+# Variance explained by each component
+pca1$sdev^2/ncol(tree_pca %>% select(-Event)) 
+
+plot(1:length(pca1$rotation[,1]), 
+     cumsum(pca1$sdev^2/ncol(tree_pca %>% select(-Event))),
+     xlab = "Number of principal components",
+     ylab = "Cumulative % of variance explained") 
+title("Scree plot for PCA")
+```
+
+## Build a random forest model to predict survival object of Time and Event by loading scores
+
+After finding loading scores, we used them to build a random forest model that predicted the survival object of Time and Event. We chose random forest as our supervised learning technique because we did not know which loading score(s) had the most importance in predicting the survival object. 
+
+```{r}
+# Create a vector of loading scores from all the PCs
+loading_score_vec <- pca1$x
+
+# Create a dataset of loading scores, Event, and Time
+tree_subset <- data.frame(loading_score_vec) %>%
+  mutate(Event = tree_pca$Event,
+         Time = tree_pca$Time) 
+
+# Survival tree (single tree)
+# surv_tree_1 <- rpart(Surv(Time, Event) ~ .,
+#                      data = subset2)
+# rpart.plot(surv_tree_1, cex = 1)
+
+# Build a random forest model 
+rf_test<- ranger(Surv(Time, Event) ~., 
+             data = tree_subset,
+             importance = 'impurity')
+rf_test
+
+# Plot variable importance
+barplot(rf_test$variable.importance,
+        xlab = "Variable",
+        ylab = "Importance")
+title("Variable importance for the random forest model with loading scores")
+
+# Alternative: rfsrc function
+# rf_test2 <- randomForestSRC::rfsrc(Surv(Time, Event) ~.,
+#                   data = subset2,
+#                   importance = TRUE)
+# rf_test2
+# rf_test2$importance
+```
+
+Prediction error: "Prediction error is calculated using OOB data. [...] For survival, prediction error is measured by 1-C, where C is Harrell's (Harrell et al., 1982) concordance index. Prediction error is between 0 and 1, and measures how well the predictor correctly ranks (classifies) two random individuals in terms of survival. A value of 0.5 is no better than random guessing. A value of 0 is perfect." (https://www.rdocumentation.org/packages/randomForestSRC/versions/1.0.0/topics/rfsrc)
+
+
+# Ellie's part
+Remove unwanted variables
+```{r}
+trees_clean <- trees %>%
+  select(-c(EMF, AMF, Alive, Harvest))
+
+rows <- seq(from = 1, to = nrow(trees), by = 1)
+row_nums <- as.data.frame(rows)
+
+trees_clean2 <- cbind(row_nums, trees_clean)
+```
+
+Create a single survival tree
+
+```{r}
+surv_tree <- rpart(Surv(Time, Event) ~.-No -Census, data = trees_clean, model = TRUE)
+#preds <- predict(surv_tree, data = trees_clean)
+library(prodlim)
+library(survival)
+library(rpart)
+library(rpart.plot)
+library(tidyverse)
+library(pec)
+library(rms)
+rpart.plot(surv_tree)
+
+validate(surv_tree)
+```
+
+```{r}
+c_ind <- 0.5 + 0.48/2
+c_ind
+```
+
+
+
+
+```{r}
+library(ranger)
+rf <- ranger(Surv(Time, Event) ~.-No-Census, data = trees_clean %>%na.omit(), importance = 'impurity')
+rf
+
+
+as.data.frame(rf$variable.importance) %>%
+  arrange(-rf$variable.importance)
+
+
+```
+
+
+
+
+
+
+
+
+
+

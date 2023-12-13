@@ -26,15 +26,21 @@ library(caret) # test of SVM
 library(LiblineaR) # caret SVM testing
 library(kernlab) # caret SVM testing
 library(survivalsvm) # functional SVM 
+library(rms) # validate R-part
 
 # set a seed
 set.seed(1)
 ```
 
+# Introduction
+
+In this study, we make predictions on the factors that influence tree survival amongst seedlings to determine which aspects contribute the most to tree health. In particular, we analyze the plant-soil relationships to characterize how qualities of the soil and properties of a given tree influence each other. We implement survival analysis to identify the most important variables and use a variety of statistical learning models to compare and contrast the accuracy of each method. We present a report that analyzes how the cox proportional hazards regression model (coxph), random forest, survival trees, and support vector machines (SVM) compare to each other in their ability to understand the plant-soil relationships. 
+
 ```{r load data, warning = F, message = F}
 library(randomForest)
 library(caret)
 trees <- read_csv("Tree_Data.csv")
+#trees <- read_csv(file.choose())
 ```
 
 # EDA: 
@@ -81,6 +87,17 @@ trees %>%
 ```
 
 In the dendrogram in Fig. 4, there is no split with only one terminal node, which suggests that there is no outlier that should be removed for data analysis.
+
+# Quantifying Results
+
+In this study, we use the Harrel’s concordance index (c-index) to evaluate the quality of our statistical learning models. This survival metric is used to quantify how well the predicted risk score correlates with the survival time. In particular, the c-index prediction error is determined by 1-C, where C is the c-index. This metric takes on a value between 0 and 1 and quantifies how well the model accurately ranks two random observations in terms of survival. Namely, a c-index of 0.5 is no better than random guessing and a c-index of 0 is evidence of a perfect model. Mathematically, the c-index is defined as 
+
+$ C = \frac{\sum_{i,i':y_i>y_i'}I(\hat{n_{i'}}>\hat{n_{i'}})\delta_{i'}}{\sum_{i,i':y_i>y_i'}\delta_{i'}}$,
+
+where $I$ represents the indicator variable, $\hat{n_{i'}}$ and $\hat{n_{i'}}$ represent a pair of observations, and $\delta_{i'}$ is the status variable, taking on a 0 value if the $i'^{th}$ variable is censored and 1 if the $i'^{th}$ variable is uncensored. The indicator variable $I$ similarly takes on a binary value of either 0 or 1, where $I = 1$ if $\hat{n_{i'}}>\hat{n_{i'}}$ (the hazard for the $i'^{th}$ observation is larger than the $i^{th}$ observation) and $I = 0$ otherwise. Practically, this means that the c-index will take on a larger value when it correctly predicts that $\hat{n_{i'}}>\hat{n_{i'}}$, resulting in an error ($1-C$) close to 0. 
+
+As a result, this metric appropriate for defining the efficacy of our model in predicting survival amongst trees. 
+
 
 # Principal Component Analysis for Random Forest
 
@@ -193,51 +210,13 @@ title("Variable importance for the random forest model with loading scores")
 Prediction error: "Prediction error is calculated using OOB data. [...] For survival, prediction error is measured by 1-C, where C is Harrell's (Harrell et al., 1982) concordance index. Prediction error is between 0 and 1, and measures how well the predictor correctly ranks (classifies) two random individuals in terms of survival. A value of 0.5 is no better than random guessing. A value of 0 is perfect." (https://www.rdocumentation.org/packages/randomForestSRC/versions/1.0.0/topics/rfsrc)
 
 
-# Ellie's part
-Remove unwanted variables
-```{r}
-trees_clean <- trees %>%
-  select(-c(EMF, Alive, Harvest))
-
-rows <- seq(from = 1, to = nrow(trees), by = 1)
-row_nums <- as.data.frame(rows)
-
-trees_clean2 <- cbind(row_nums, trees_clean)
-```
-
-Create a single survival tree
-
-```{r}
-surv_tree <- rpart(Surv(Time, Event) ~.-rows, data = trees_clean)
-
-rpart.plot(surv_tree)
-```
-
-Results
-- Most important variables: Census, Phenolics, certain categories of adult trees, AMF
-```{r}
-# Calculate confusion matrix to summarize these results
-
-
-```
-
-```{r}
-library(ranger)
-rf <- ranger(Surv(Time, Event) ~.-No, data = trees_clean %>%na.omit(), importance = 'impurity')
-
-
-as.data.frame(rf$variable.importance) %>%
-  arrange(-rf$variable.importance)
-
-
-```
-
 ## Andy: Survival function
 
 After preparing data, we can use the `Surv` function on the dataset to create a survival object to be used in various functions. We supply the time and event variables (Time and Event respectively) for survival analysis.
 
 ```{r Data preparation}
-tree <- read.csv("Tree_Data.csv") 
+#tree <- read.csv("Tree_Data.csv") 
+tree <- trees
 
 # Remove unwanted variables
 tree <- tree %>% select(-No, -Harvest, -Alive, -Adult)
@@ -346,6 +325,52 @@ svm_c <- conindex(svm_pred, test$Time)
 
 svm_c
 ```
+
+
+# Single Survival Tree
+
+A survival tree to analyze the relationships between variables in the dataset can be implemented by analyzing splits in the data that yield the largest differences in survival. This can be done by comparing the survival outcomes of different categories in a given variable and determining which traits yield the highest chance of survival.
+
+As with our SVM model, we pass in a survival object into our model for the model to make survival predictions. The results of the predictions made from the tree are shown in 
+```{r}
+surv_tree <- rpart(Surv(Time, Event) ~.-Census, data = tree, model = TRUE)
+rpart.plot(surv_tree, main = "Fig. 5: Single Decision Tree Example")
+validate(surv_tree)
+```
+
+
+As shown in Fig. 5, Phenolics and the date that the tree was planted appear to be the variables most linked to tree survival. With use of the "validate" function in the rms package, different control values $k$ were tested and the appropriate $D_{xy}$ values for training and testing were output. The package implements 10-fold cross validation to ensure that the error values accurately represent how well the algorithm might perform on new data. For each attempted $k$, the mean $D_{xy}$ was calculated. One can convert from $D_{xy}$ to the c-index through the relationship
+$D_{xy} = 2(C-0.5)$, 
+where $C$ is the c-index. 
+
+```{r}
+tree_res <- validate(surv_tree)
+best_c <- max(tree_res$dxy.val)
+# Calculate c-index from testing dxy 
+c_ind <- 0.5 + best_c/2
+c_ind
+1-c_ind
+```
+
+As shown above, the c-index is ~0.74, which means that the associated error is 0.26. This result implicates that the model is performing better than random guessing and specifically can predict with 74% accuracy how long it will take for a tree to die given the reported conditions. This method, however, is susceptible to high variance. Because this model is a single decision tree, there is a lot of uncertainty and a few changes in some of the edge observations could change the way that the model is predicting in a significant manner. This tree might be predicting with 74% survival accuracy in this set of observations, but might perform much differently given a slightly different set of observations. 
+
+# Survival Random Forest
+
+A similar model with less variance is the random forest. This model makes use of a collection of "weak-learners" to make predictions on a dataset. These weak-learners are designed to make predictions that are slightly better than random guessing and a majority vote is taken to determine the resulting prediction for a given observation. Because this method uses majority vote, it is subject to less variance than a single tree model. A similar approach can be done for survival analysis on a random forest. Note: 1 observation was omitted, as the reported "event" was unknown. In a similar way as done for the single tree, a survival object is passed into the ranger function and importance is tracked. 
+```{r}
+rf <- ranger(Surv(Time, Event) ~.-Census, data = tree %>%na.omit(), importance = 'impurity')
+rf$prediction.error
+rf_c = 1 - rf$prediction.error
+rf_c
+as.data.frame(rf$variable.importance) %>%
+  arrange(-rf$variable.importance)
+```
+As shown above, the random forest makes survival predictions that yield a c-index of $0.70$. This result implicates that the tree is predicting survival times with $70%$ accuracy (and $30%$ error). This is a worse prediction than the one found above for a single decision tree, however, it is important to reiterate that this model is subject to less bias than the single decision tree and might prove to generalize better to new data. 
+
+
+
+
+
 
 
 
