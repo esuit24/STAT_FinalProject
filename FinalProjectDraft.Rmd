@@ -268,9 +268,18 @@ We can also try fitting covariates to the survival curve. (Coming later)
 
 ```{r}
 # Survival curve with covariates
+
+
 ```
 
-The Cox proportional hazards model is also possible to implement using a survival object. Using variables which have been selected to present a signficant p-value. (Will describe more later)
+The Cox proportional hazards model is also possible to implement using a survival object. Using variables which have been selected to present a signficant p-value. 
+
+Outline of section:
+
+Relevance of variables can be judged by placing them in the model and observing whether the p-value for the variable (or any of its factors if it is a character variable) is significant (≤0.05). 
+
+Relevant chr variables include Species, Conspecific, SoilMyco, Sterile.
+Relevant numerical variables include Phenolics.
 
 ```{r Coxph}
 # Coxph
@@ -302,7 +311,7 @@ svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), me
 svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="svmBoundrangeString")
 ```
 
-We can instead use the `survivalsvm` package to predict survival time and receive a concordance index value to compare with other models.
+We can instead use the `survivalsvm` package to predict survival time and receive a concordance index value to compare with other models. When predicting using a training subset and a testing subset, the C-index value for survivalsvm is quite high.
 
 ```{r survivalSVM}
 set.seed(1)
@@ -315,7 +324,7 @@ train <- tree[train_rows,]
 test <- tree[-train_rows,]
 
 # survivalsvm function
-svm_tree <- survivalsvm(Surv(Time, Event)~.-PlantDateYear, data=train, type="vanbelle1", diff.meth="makediff1", gamma.mu=1)
+svm_tree <- survivalsvm(Surv(Time, Event)~.-c(PlantDateYear, Census), data=train, type="vanbelle1", diff.meth="makediff1", gamma.mu=1)
 
 # predictions using the resulting object
 svm_pred <- predict(svm_tree, newdata=test)
