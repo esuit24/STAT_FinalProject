@@ -18,7 +18,7 @@ library(survival)
 library(rpart)
 library(rpart.plot)
 library(dendextend) # hierarchical clustering
-library(lubridate) # hierarchical clustering
+library(lubridate) # convert PlantDate to date object
 library(kernlab) # SVM
 library(e1071) # SVM
 library(ranger) # RF
@@ -27,33 +27,31 @@ library(LiblineaR) # caret SVM testing
 library(kernlab) # caret SVM testing
 library(survivalsvm) # functional SVM 
 library(rms) # validate R-part
+library(randomForest)
 
 # set a seed
 set.seed(1)
 ```
 
-# Introduction
-
-In this study, we make predictions on the factors that influence tree survival amongst seedlings to determine which aspects contribute the most to tree health. In particular, we analyze the plant-soil relationships to characterize how qualities of the soil and properties of a given tree influence each other. We implement survival analysis to identify the most important variables and use a variety of statistical learning models to compare and contrast the accuracy of each method. We present a report that analyzes how the cox proportional hazards regression model (coxph), random forest, survival trees, and support vector machines (SVM) compare to each other in their ability to understand the plant-soil relationships. 
-
 ```{r load data, warning = F, message = F}
-library(randomForest)
-library(caret)
 trees <- read_csv("Tree_Data.csv")
 #trees <- read_csv(file.choose())
 ```
 
-# EDA: 
+## 1. Ellie and Ai: Introduction and Motivation 
 
-The dataset in this report comes from the article "tree seedling functional traits mediate plant-soil feedback survival responses across a gradient of light availability" by Wood et al. In the article, the researchers conducted a field experiment, "consisting of four tree species, seven soil sources (sterilized conspecific, live conspecific, and five heterospecific), and a gradient of forest understory light levels (low, medium, and high)." 
+In this study, we make predictions on the factors that influence tree survival amongst seedlings to determine which aspects contribute the most to tree health. In particular, we analyze the plant-soil relationships to characterize how qualities of the soil and properties of a given tree influence each other. We implement survival analysis to identify the most important variables and use a variety of statistical learning models to compare and contrast the accuracy of each method. We present a report that analyzes how the cox proportional hazards regression model (coxph), random forest, survival trees, and support vector machines (SVM) compare to each other in their ability to understand the plant-soil relationships. 
 
-As Fig. 1 shows, each of the four species has a similar number of trees. 
+The dataset in this study (https://www.kaggle.com/datasets/yekenot/tree-survival-prediction/data) comes from the article "tree seedling functional traits mediate plant-soil feedback survival responses across a gradient of light availability" by Wood et al (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0293906#sec002). In the article, the authors conducted a field experiment with four tree species planted in seven soil sources (sterilized conspecific, live conspecific, and five heterospecific) and under a gradient of forest understory light levels (low, medium, and high). 
+
+As Fig. 1 below shows, the number of seedlings for each of the four species is in a similar range.
 
 ```{r}
 ggplot(data = trees, mapping = aes(x = Species)) + 
   geom_bar(fill = "lightblue") +
   labs(y = "Count", x = "Tree species",
-       title = "Figure 1. Number of trees by species")
+       title = "Figure 1. Number of trees",
+       subtitle = "Segmented by species")
 ```
 
 In the research, two controlled conditions for the seedlings were soil sources and light availability. For soil sources, if the soil cores were collected beneath a tree of the same species as the seedling, it is called *conspecific* soil. If a conspecific soil was sterilized, then it is called *sterilized*. If the soil core was collected from beneath a tree of a different specie than the seedling, then it is called *heterospecific}. Fig. 2 shows the distribution of the soil sources segmented by tree species. In Fig. 2, within each type of soil source, tree species are nearly evenly distributed. However, the figure also indicates that Heterospecific soil was more common than Conspecific or Sterilized. 
@@ -70,25 +68,73 @@ ggplot(data = tree_EDA, mapping = aes(x = Conspecific, fill = Species)) +
   # geom_bar(position = "fill") +
   geom_bar() +
   labs(y = "Count", x = "Soil source",
-       title = "Figure 2. Soil sources by species")
+       title = "Figure 2. Soil sources",
+       subtitle = "Segmented by species")
 ```
 
 Fig. 3 does the same thing as above for the light levels. In the data collection process, light availability was initially measured as a continuous variable by using Indirect Site Factor (SF) which is the proportion of solar radiation at a given location relative to an open site (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0293906#sec002). Then, the range of the ISF value was split into three partitions of equal length and three categories of light level (low, medium, and high) were created. Fig. 3 is a distribution of those three light levels segmented by species. Similar to Fig. 2, within each light availability, the number of the seedlings is about the same for all the four species. Yet, more seedlings had the low or medium light level than high. 
 
-How to manually order x-axis on bar chart: https://community.rstudio.com/t/how-to-manually-order-x-axis-on-bar-chart/9601 was used for the following code.
 ```{r}
-trees %>% 
+tree_EDA2 <- trees %>% 
+  mutate(Light_Cat = case_when(Light_Cat == "Med" ~ "Medium",
+                               Light_Cat == "High" ~ "High",
+                               Light_Cat == "Low" ~ "Low")) %>%
   mutate(Light_Cat = factor(Light_Cat, 
-                                    levels = c("Low", "Med", "High"))) %>% 
-  ggplot(mapping = aes(x = Light_Cat, fill = Species)) +
-  geom_bar() + 
-  labs(y = "Count", x = "Light level",
-       title = "Figure 3. Light levels by species")
+                            levels = c("Low", "Medium", "High")))
+# to change levels of Light_Cat in the code above, we refereed to this website: https://community.rstudio.com/t/how-to-manually-order-x-axis-on-bar-chart/9601
+
+ggplot(data = tree_EDA2, 
+       mapping = aes(x = Light_Cat, fill = Species)) +
+geom_bar() + 
+labs(y = "Count", x = "Light level",
+     title = "Figure 3. Light levels",
+     subtitle = "Segmented by species")
 ```
 
-In the dendrogram in Fig. 4, there is no split with only one terminal node, which suggests that there is no outlier that should be removed for data analysis.
+Lastly, Fig.4 through Fig. 6 below show the distribution of dates on which trees were planted. Fig. 4 indicates that every tree in the dataset was planted in 2018, Fig. 5 demonstrates that every tree was planted either in May or June, and Fig. 6 reveals that there is more variation in plant day than plant year and month. 
 
-# Quantifying Results
+```{r, warning = F, message = F}
+# Convert to date obaject. Code cited from https://epirhandbook.com/en/working-with-dates.html
+tree_EDA3 <- trees %>% 
+  mutate(PlantDate = mdy(PlantDate)) %>% 
+  mutate(PlantDateYear = year(PlantDate),
+         PlantDateMonth = month(PlantDate),
+         PlantDateDay = day(PlantDate))
+
+ggplot(data = tree_EDA3,mapping = aes(x = factor(PlantDateYear))) + 
+  geom_bar()+
+  labs(title = "Figure 4. Year of Plant Day",
+       subtitle = "Faceted by species",
+       x = "Year", y =  "Count")+
+  facet_grid(. ~ Species)
+
+tree_EDA3 <- tree_EDA3 %>%
+  mutate(PlantDateMonth = case_when(PlantDateMonth == 5 ~ "May",
+                                    PlantDateMonth == 6 ~ "June")) %>%
+  mutate(PlantDateMonth = factor(PlantDateMonth, 
+                            levels = c("May", "June")))
+ggplot(data = tree_EDA3,mapping = aes(x = PlantDateMonth)) + 
+  geom_bar()+
+  labs(title = "Figure 5. Month of Plant Date",
+       subtitle = "Faceted by species",
+       x = "Month", y =  "Count")+
+  facet_grid(. ~ Species)
+
+ggplot(data = tree_EDA3,mapping = aes(x = PlantDateDay)) + 
+  geom_histogram()+
+  labs(title = "Figure 6. Day of Plant Date",
+       subtitle = "Faceted by species",
+       x = "Day", y =  "Count")+
+  facet_grid(. ~ Species)
+```
+
+## 2. Ai: Methods 
+
+Before building statistical models for predicting tree survival, we conducted hierarchical clustering to identify any outliers. We then used Principal Component Analysis (PCA) because there were ten numerical variables that could influence the survival of seedlings and using PCA would allow us to reduce the dimension to a smaller number of variables that summarized most of the variability in those variables. Following PCA, we built a random forest model based on loading scores for the principal components to answer one of our research questions which was to compare the accuracy of predictive algorithms for tree survival. 
+
+Although using principal components for random forest is certainly one way of building a predictive model for tree survival, it has limitations. One limitation is that we can only determine variable importance in terms of principal components and not in terms of variables in the original dataset. Another limitation is that we can only use numerical variables for PCA. Given that one of our research questions was to understand what variables in the dataset were more influential in tree survival than others, these limitations had to be avoided. Hence, we built a Cox proportional hazards regression model (Coxph), a support vector machine (SVM) model, and a random forest model by using all the variables (both numerical and categorical) that could influence tree survival as predictors. 
+
+## 3. Ellie: Metrics
 
 In this study, we use the Harrel’s concordance index (c-index) to evaluate the quality of our statistical learning models. This survival metric is used to quantify how well the predicted risk score correlates with the survival time. In particular, the c-index prediction error is determined by 1-C, where C is the c-index. This metric takes on a value between 0 and 1 and quantifies how well the model accurately ranks two random observations in terms of survival. Namely, a c-index of 0.5 is no better than random guessing and a c-index of 0 is evidence of a perfect model. Mathematically, the c-index is defined as 
 
@@ -98,52 +144,98 @@ where $I$ represents the indicator variable, $\hat{n_{i'}}$ and $\hat{n_{i'}}$ r
 
 As a result, this metric appropriate for defining the efficacy of our model in predicting survival amongst trees. 
 
+## 4. Results
 
-# Principal Component Analysis for Random Forest
+### Ai: 4.1 Hierarchical clustering 
 
-In this section, we first calculated principal components of numerical variables that may have impacted tree's survival and built a random forest model that used them as a predictor variable for the survival object of Time (the number of days at which time the seedling died or the experiment ended) and Event (status of each seedling at a given time; 0 for alive and 1 for dead).
+Below, we conducted hierarchical clustering for numerical variables. Among the numerical variables, we did not include the variable No because it was an ID number unique to each tree.
 
-Because PCA only works with numerical variables, we first removed categorical variables shown in below. 
+```{r, warning = F}
+# convert PlantDate in character format to date time object
+tree_hc <- trees %>% 
+  mutate(PlantDate = mdy(PlantDate)) %>% # change to standard format(Year-Month-Day)
+  mutate(PlantDateYear = year(PlantDate),
+          PlantDateMonth = month(PlantDate),
+          PlantDateDay = day(PlantDate))
 
-** Species
-** Light Cat
-** Soil: Species from which the soil core was taken 
-** Adult: individual tree that soil was taken from
-** Sterile: whether the soil was sterilized or not
-** Conspecific: whether the soil was conspecific, heterospecific, or sterlized conspecific
-** Myco: Mycorrhizal type of the seedling species (AMF or EMF)
-** SoilMyco: Mycorrhizal type of the species culturing the soil (AMF or EMF)
-** Event: this was our outcome variable
+# scale tree data without the variable Census
+tree_scaled <- select_if(tree_hc, is.numeric) %>% # select only numeric columns
+                select(-No) 
+               
+# calculate all pairwise distances
+tree_distances1 <- dist(tree_scaled)
 
-After that, we also removed four numerical variables: No, Harvest, Alive, and Time. The variable No is a unique ID attached to each seedling, thus, it should not have influenced tree survival. Moreover, the variables Harvest and Alive are related to what happened to seedlings that were still alive at the end of the experiment, so we reasoned that they would not have impacted tree survival. Lastly, the variable Time was removed from the calculation of loading scores because it was our outcome variable.
+# Do hierarchical clustering
+hc <- tree_distances %>%
+  hclust() %>%
+  as.dendrogram() %>%
+  place_labels(trees$No) 
+
+plot(hc,
+     xlab = "Tree ID",
+     ylab = "Height") 
+title('Figure 7. Cluster dendrogram')
+```
+
+As shown in the dendrogram in Fig. 7, there was no split with only one terminal node, which suggested that there was no outlier to be removed for data analysis. Thus, we did not remove any variables in the remaining sections of this report. 
+
+### Ai: 4.2 Principal Component Analysis (PCA)
+
+In this section, we calculated principal components of numerical variables that may have impacted the survival of seedlings.
+
+Because PCA only works with numerical variables, we first removed the categorical variables shown below. 
+
+* Species: Names of tree species
+* Light Cat: Categorical variable for light levels (Low, Medium, High)
+* Soil: Species from which the soil core was taken 
+* Adult: Individual tree that soil was taken from
+* Sterile: Whether the soil was sterilized or not
+* Conspecific: Whether the soil was conspecific, heterospecific, or sterilized conspecific
+* Myco: Mycorrhizal type of the seedling species (AMF or EMF)
+* SoilMyco: Mycorrhizal type of the species culturing the soil (AMF or EMF)
+* Event: Status of each seedling at a given time; 0 for alive and 1 for dead
+
+Additionally, we removed five numerical variables for the following reasons. 
+
+* No: This was a unique ID attached to each seedling, thus, it should not have influenced tree survival. 
+* Harvest, Alive: the variables Harvest and Alive were related to what happened to seedlings after the end of the experiment, so we assumed that they would not have impacted tree survival.
+* Time: Time was the status of each seedling at a given time and hence should not have influenced tree survival. 
+* Census: This was the number of week that a given tree died or the experiment ended (whichever was earlier); it indicated essentially the same thing as the variable Time. Thus, we removed Census as well.
+* PlantDateYear: Because every observation had 2018 as PlantDateYear (see Fig. 4), this variable should not have influenced tree survival.
 
 In short, we calculated loading scores by using the following variables. 
 
-* Plot
-* Subplot
-* PlantDate
-* Light ISF: the amount of light reaching each subplot at a height of 1m
+* Plot: Number of the field plot the seedling was planted in (1-18)
+* Subplot: Subplot within the main plot the seedling was planted in (A-E)
+* PlantDateDay: Day of date when the seedling was planted
+* PlantDateMonth: Month of date when the seedling was planted
+* Light ISF: Amount of light reaching each subplot at a height of 1m
 * Core: Year the soil core was removed from the field
 * AMF: Percent arbuscular mycorrhizal fungi colonization on the fine roots of harvested seedlings
 * EMF: Percent ectomycorrhizal fungi colonization on the root tips of harvested seedlings
 * Phenolics: nmol Gallic acid equivalents per mg dry extract
 * NSC: percent dry mass nonstructural carbohydrates
 * Lignin: percent dry mass lignin
-* Census
 
-## Find loading score 
+The original dataset had N/A’s for the variable EMF for all observations that had AMF (arbuscular mycorrhizal fungi) in the variable Myco. We contacted Dr. Wood (one of the authors of the article this data was from), and she mentioned that she and other authors did not measure EMF for these observations because the seedlings that have AMF in the variable Myco do not get colonized by EMF (ectomycorrhizal fungi). Hence, we replaced the N/A’s with 0. 
+
+#### Find loading score 
 ```{r}
+# Convert all NA EMF values to 0 with researchers' blessing
+tree_pca <- replace(trees, is.na(trees$EMF), 0.00)
+
+
 # convert PlantDate in character format to date time object
-tree_pca <- trees %>% 
-  mutate(PlantDate = mdy(PlantDate)) %>% # change to standard format(Year-Month-Day)
+tree_pca <- tree_pca %>%
+  mutate(PlantDate = mdy(PlantDate)) %>% # change to date object (Year-Month-Day)
   mutate(PlantDateYear = year(PlantDate),
-          PlantDateMonth = month(PlantDate),
-          PlantDateDay = day(PlantDate)) %>%
-  select(-PlantDate)
+         PlantDateMonth = month(PlantDate),
+         PlantDateDay = day(PlantDate))  %>%
+  select(-PlantDate, -PlantDateYear)
 
 # select necessary variables
-tree_pca <- trees %>%
-  select(-c(No, Harvest, Alive)) %>%
+tree_pca <- tree_pca %>%
+  select(-c(No, Harvest, Alive, Census)) %>%
   select_if(is.numeric) %>%
   na.omit()
 
@@ -151,27 +243,13 @@ colnames(tree_pca)
 
 # scale data and conduct PCA
 pca1 <- prcomp(tree_pca %>% select(-c(Event, Time)), scale = TRUE) # remove what we are predicting (Event and Time)
-
-# the first PC (direction of the data along which the observations vary the most)
-# sort(pca1$rotation[,1])
 ```
 
-The scree plot below indicates that the first seven principal components explain more than 80% of variance in the selected numerical variables. It also shows that the eighth and ninth principal components explain less than 10% of variance in those numerical variables. 
+### Ai: 4.3 Random forest with survival object using PCA
 
-```{r}
-# Variance explained by each component
-pca1$sdev^2/ncol(tree_pca %>% select(-Event)) 
+After finding loading scores for the principal components, we used them to build a random forest model that predicted the survival object of Time (the number of days at which time the seedling died or the experiment ended) and Event (status of each seedling at a given time; 0 for alive and 1 for dead). We chose random forest as our supervised learning technique because we did not know which loading score(s) had the highest importance in predicting the survival object.  
 
-plot(1:length(pca1$rotation[,1]), 
-     cumsum(pca1$sdev^2/ncol(tree_pca %>% select(-Event))),
-     xlab = "Number of principal components",
-     ylab = "Cumulative % of variance explained") 
-title("Scree plot for PCA")
-```
-
-## Build a random forest model to predict survival object of Time and Event by loading scores
-
-After finding loading scores, we used them to build a random forest model that predicted the survival object of Time and Event. We chose random forest as our supervised learning technique because we did not know which loading score(s) had the most importance in predicting the survival object. 
+#### Build a random forest model to predict survival object of Time and Event based on loading scores
 
 ```{r}
 # Create a vector of loading scores from all the PCs
@@ -182,11 +260,6 @@ tree_subset <- data.frame(loading_score_vec) %>%
   mutate(Event = tree_pca$Event,
          Time = tree_pca$Time) 
 
-# Survival tree (single tree)
-# surv_tree_1 <- rpart(Surv(Time, Event) ~ .,
-#                      data = subset2)
-# rpart.plot(surv_tree_1, cex = 1)
-
 # Build a random forest model 
 rf_test<- ranger(Surv(Time, Event) ~., 
              data = tree_subset,
@@ -194,23 +267,16 @@ rf_test<- ranger(Surv(Time, Event) ~.,
 rf_test
 
 # Plot variable importance
-barplot(rf_test$variable.importance,
-        xlab = "Variable",
-        ylab = "Importance")
-title("Variable importance for the random forest model with loading scores")
-
-# Alternative: rfsrc function
-# rf_test2 <- randomForestSRC::rfsrc(Surv(Time, Event) ~.,
-#                   data = subset2,
-#                   importance = TRUE)
-# rf_test2
-# rf_test2$importance
+# barplot(rf_test$variable.importance,
+#         xlab = "Variable",
+#         ylab = "Importance")
+# title("Variable importance for the random forest model with loading scores")
 ```
 
-Prediction error: "Prediction error is calculated using OOB data. [...] For survival, prediction error is measured by 1-C, where C is Harrell's (Harrell et al., 1982) concordance index. Prediction error is between 0 and 1, and measures how well the predictor correctly ranks (classifies) two random individuals in terms of survival. A value of 0.5 is no better than random guessing. A value of 0 is perfect." (https://www.rdocumentation.org/packages/randomForestSRC/versions/1.0.0/topics/rfsrc)
+The above result indicates that the Harrel’s concordance index (c-index) for this random forest model based on loading scores for the principal components is approximately 0.699. This means that, given two random seedlings from the dataset, the model can predict survival with 69.9% accuracy. 
 
 
-## Andy: Survival function
+## Andy: 4.4 Survival function and Coxph
 
 After preparing data, we can use the `Surv` function on the dataset to create a survival object to be used in various functions. We supply the time and event variables (Time and Event respectively) for survival analysis.
 
@@ -292,7 +358,7 @@ coxph_tree
 # Good vars: Species, Con, SoilMyco, Phenolics
 ```
 
-## Andy: SVM with survival object
+## 4.5 Andy: SVM with survival object
 
 We have used support vector machines for datasets with many possible predictor variables. It thus seems prudent to try to use SVM for this problem. Upon testing SVM with the `caret` package, which we have done before in class using a value of "svmLinear2" for the `method` argument, the `train` function does not seem to be able to work. This is likely because we have passed in a survival object as `x` instead of the typical single predictor, for the error is "Invalid operation on a survival time". Altering the method to one of the other SVM methods included as options in caret also does not work, and the `e1071` package itself predictably fails as well. 
 
@@ -336,7 +402,7 @@ svm_c
 ```
 
 
-# Single Survival Tree
+## 4.6 Ellie: Single Survival Tree
 
 A survival tree to analyze the relationships between variables in the dataset can be implemented by analyzing splits in the data that yield the largest differences in survival. This can be done by comparing the survival outcomes of different categories in a given variable and determining which traits yield the highest chance of survival.
 
@@ -363,7 +429,7 @@ c_ind
 
 As shown above, the c-index is ~0.74, which means that the associated error is 0.26. This result implicates that the model is performing better than random guessing and specifically can predict with 74% accuracy how long it will take for a tree to die given the reported conditions. This method, however, is susceptible to high variance. Because this model is a single decision tree, there is a lot of uncertainty and a few changes in some of the edge observations could change the way that the model is predicting in a significant manner. This tree might be predicting with 74% survival accuracy in this set of observations, but might perform much differently given a slightly different set of observations. 
 
-# Survival Random Forest
+## 4.7 Survival Random Forest
 
 A similar model with less variance is the random forest. This model makes use of a collection of "weak-learners" to make predictions on a dataset. These weak-learners are designed to make predictions that are slightly better than random guessing and a majority vote is taken to determine the resulting prediction for a given observation. Because this method uses majority vote, it is subject to less variance than a single tree model. A similar approach can be done for survival analysis on a random forest. Note: 1 observation was omitted, as the reported "event" was unknown. In a similar way as done for the single tree, a survival object is passed into the ranger function and importance is tracked. 
 ```{r}
