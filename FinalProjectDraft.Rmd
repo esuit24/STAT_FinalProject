@@ -14,20 +14,23 @@ knitr::opts_chunk$set(echo = TRUE)
 ```{r load packages, warning = F, message = F}
 # libraries 
 library(tidyverse)
-library(survival)
+library(lubridate) # convert PlantDate to date object
+library(dendextend) # hierarchical clustering
+library(survival) # survival analysis
+
+# random forest
 library(rpart)
 library(rpart.plot)
-library(dendextend) # hierarchical clustering
-library(lubridate) # convert PlantDate to date object
-library(kernlab) # SVM
-library(e1071) # SVM
-library(ranger) # RF
+library(ranger)
+library(rms) # validate R-part
+library(randomForest)
+# SVM
+library(kernlab)
+library(e1071)
 library(caret) # test of SVM
 library(LiblineaR) # caret SVM testing
 library(kernlab) # caret SVM testing
 library(survivalsvm) # functional SVM 
-library(rms) # validate R-part
-library(randomForest)
 
 # set a seed
 set.seed(1)
@@ -81,7 +84,7 @@ tree_EDA2 <- trees %>%
                                Light_Cat == "Low" ~ "Low")) %>%
   mutate(Light_Cat = factor(Light_Cat, 
                             levels = c("Low", "Medium", "High")))
-# to change levels of Light_Cat in the code above, we refereed to this website: https://community.rstudio.com/t/how-to-manually-order-x-axis-on-bar-chart/9601
+# the code above to change levels of Light_Cat was cited from https://community.rstudio.com/t/how-to-manually-order-x-axis-on-bar-chart/9601
 
 ggplot(data = tree_EDA2, 
        mapping = aes(x = Light_Cat, fill = Species)) +
@@ -163,7 +166,7 @@ tree_scaled <- select_if(tree_hc, is.numeric) %>% # select only numeric columns
                 select(-No) 
                
 # calculate all pairwise distances
-tree_distances1 <- dist(tree_scaled)
+tree_distances <- dist(tree_scaled)
 
 # Do hierarchical clustering
 hc <- tree_distances %>%
@@ -177,7 +180,7 @@ plot(hc,
 title('Figure 7. Cluster dendrogram')
 ```
 
-As shown in the dendrogram in Fig. 7, there was no split with only one terminal node, which suggested that there was no outlier to be removed for data analysis. Thus, we did not remove any variables in the remaining sections of this report. 
+As shown in the dendrogram in Fig. 7, there was no split with only one terminal node, which suggested that there was no outlier to be removed for data analysis. Thus, we did not remove any variables in the remaining part of this report. 
 
 ### Ai: 4.2 Principal Component Analysis (PCA)
 
@@ -221,8 +224,9 @@ The original dataset had N/A’s for the variable EMF for all observations that 
 
 #### Find loading score 
 ```{r}
-# Convert all NA EMF values to 0 with researchers' blessing
-tree_pca <- replace(trees, is.na(trees$EMF), 0.00)
+# Convert all NA EMF values to 0. Code cited from https://stackoverflow.com/questions/8161836/how-do-i-replace-na-values-with-zeros-in-an-r-dataframe
+tree_pca <- trees %>%
+    mutate(EMF = if_else(is.na(EMF), 0, EMF))
 
 
 # convert PlantDate in character format to date time object
@@ -231,7 +235,7 @@ tree_pca <- tree_pca %>%
   mutate(PlantDateYear = year(PlantDate),
          PlantDateMonth = month(PlantDate),
          PlantDateDay = day(PlantDate))  %>%
-  select(-PlantDate, -PlantDateYear)
+  select(-PlantDate, -PlantDateYear) # remove the original PlantDate and PlantDateYear
 
 # select necessary variables
 tree_pca <- tree_pca %>%
@@ -242,7 +246,7 @@ tree_pca <- tree_pca %>%
 colnames(tree_pca)
 
 # scale data and conduct PCA
-pca1 <- prcomp(tree_pca %>% select(-c(Event, Time)), scale = TRUE) # remove what we are predicting (Event and Time)
+pca1 <- prcomp(tree_pca %>% select(-c(Event, Time)), scale = TRUE) # remove what we predict (Event and Time)
 ```
 
 ### Ai: 4.3 Random forest with survival object using PCA
@@ -273,7 +277,7 @@ rf_test
 # title("Variable importance for the random forest model with loading scores")
 ```
 
-The above result indicates that the Harrel’s concordance index (c-index) for this random forest model based on loading scores for the principal components is approximately 0.699. This means that, given two random seedlings from the dataset, the model can predict survival with 69.9% accuracy. 
+The above result indicates that the Harrel’s concordance index (c-index) for this random forest model based on loading scores for the principal components is approximately 0.699 ($\approx 1-0.3008536$). This means that, given two random seedlings from the dataset, the model can predict survival with 69.9% accuracy. 
 
 
 ## Andy: 4.4 Survival function and Coxph
