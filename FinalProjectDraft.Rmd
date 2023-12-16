@@ -24,6 +24,7 @@ library(rpart.plot)
 library(ranger)
 library(rms) # validate R-part
 library(randomForest)
+
 # SVM
 library(kernlab)
 library(e1071)
@@ -42,11 +43,37 @@ trees <- read_csv("Tree_Data.csv")
 #trees <- read_csv(file.choose())
 ```
 
-## 1. Ellie and Ai: Introduction and Motivation 
+## 1. Ellie, Ai, Andy: Introduction and Motivation 
 
 In this study, we make predictions on the factors that influence tree survival amongst seedlings to determine which aspects contribute the most to tree health. In particular, we analyze the plant-soil relationships to characterize how qualities of the soil and properties of a given tree influence each other. We implement survival analysis to identify the most important variables and use a variety of statistical learning models to compare and contrast the accuracy of each method. We present a report that analyzes how the cox proportional hazards regression model (coxph), random forest, survival trees, and support vector machines (SVM) compare to each other in their ability to understand the plant-soil relationships. 
 
-The dataset in this study (https://www.kaggle.com/datasets/yekenot/tree-survival-prediction/data) comes from the article "tree seedling functional traits mediate plant-soil feedback survival responses across a gradient of light availability" by Wood et al (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0293906#sec002). In the article, the authors conducted a field experiment with four tree species planted in seven soil sources (sterilized conspecific, live conspecific, and five heterospecific) and under a gradient of forest understory light levels (low, medium, and high). 
+The dataset in this study (https://www.kaggle.com/datasets/yekenot/tree-survival-prediction/data), which is hosted on Kaggle, was added by the authors of the recent journal article "Tree seedling functional traits mediate plant-soil feedback survival responses across a gradient of light availability" (Wood et al. 2023) (https://journals.plos.org/plosone/article?id=10.1371/journal.pone.0293906#sec002). In the article, the authors conduct a field experiment in Michigan with four tree species planted in seven soil sources (sterilized conspecific, live conspecific, and five heterospecific) and under a gradient of forest understory light levels (low, medium, and high). As the variables used in this dataset are often biological terms, we explain some below.
+
+### Study focus
+
+Wood and colleagues specifically seek to investigate the linkages between plant-soil feedbacks (PSFs) and functional traits in the seedlings which they planted. The former term refers to the idea of plants exacting a sort of change in the soil in which they grow via relationships with mycorrhizal fungi -- fungi which interact with plant roots and can exchange nutrients -- or microbial pathogens. A positive PSF is defined as a feedback loop which benefits seedlings of a given species when they are grown in soil which already hosts a plant of the same species. This soil is also called *conspecific* soil. By the same token, a negative PSF is seen when seedlings of a given species grow better in soil in which trees of another species are growing -- this is called *heterospecific* soil (Wood et al. 2023).
+
+### Study design
+
+The reason why we are applying survival analysis to this dataset is because Wood et al. (2023) write about seedling survival. The authors indicate that they planted trees in field plots in June 2018, after which point they observed survival twice a week throughout the next 16 weeks of the growing season. Each period in which they observed the seedlings is labelled a "*census*". Three weeks into the study period, the authors "harvested" certain seedlings to obtain values for variables such as the concentrations of chemical compounds and mycorrhizal fungi. The authors strongly imply that they did not replant these harvested seedlings, for they call the process of measurement "destructive". After the 16-week period, Wood and colleagues analyzed survival with the `coxph` function in R, much as we did in class. The specific code is not included in the paper or the dataset manuscript, but we will also use this function for the sake of comparison and reproducibility.
+
+### Functional traits
+
+The researchers cite previous literature which investigates the idea of functional traits -- characteristics of a tree which could have an impact on its growth -- interfacing with PSFs. The main traits they introduce are phenolics, lignin, and nonstructural carbohydrates (NSCs), but they do not go into much detail on the context of these terms. Phenolics are an example of a secondary metabolite, a class of chemical which is not found in all plant cells but which can sometimes be produced in response to herbivory. A group of phenolics which has this function is the tannins, which provide a bitter taste as a deterrent to herbivores which consume the leaves (Evert and Eichhorn 2013). Lignin is in fact another type of phenolic, but it is instead known for its provision of structure to the cell walls of plant cells (Evert and Eichhorn 2013). Last, NSCs are carbohydrates such as sugars and starch (Zhang et al. 2022) which can support the plant in times of drought (Tomasella et al. 2019) and can help respond to damage in plant parts (Dietze et al. 2014). Wood and colleagues state that these traits could be considered defensive characteristics against the threat of pathogens (Wood et al. 2023).
+
+### AMF and EMF
+
+The researchers also include that the percentage of the root of a tree which has been "colonized" by mycorrhizal fungi could be considered a defensive trait (Wood et al. 2023). Mycorrhizal fungi are split into arbuscular mycorrhizal fungi (AMF) and ectomycorrhizal fungi (EMF). The former, also referred to as endomycorrhizal, are fungi which form associations with plants by entering root cells and growing inside of them. The latter are fungi which instead grow around roots (Evert and Eichhorn 2013). Wood and colleagues hold that a tree which has a higher AMF or EMF percentage may be afforded greater protection against pathogens. 
+
+We noticed that many % EMF values, which is one of the variables in the dataset, had been recorded as NA. We contacted Dr. Wood, who stated that tree species in the study which associated with AMF do not historically associate with EMF, so she did not even measure % EMF in these trees. For this reason, she stated that the NAs could be replaced with 0s as a form of imputation (Dr. Katherine Wood, personal communication, 12/11/2023). We opted to make this change to the data below to have our analyses include much more data. This observation of the researchers is consistent with Mushinski et al. (2020), who state that many tree species in the Eastern U.S. only associate with one of these types of fungi. 
+
+### Tree species
+
+The list of tree species used in the study is as follows:
+- Sugar maple (*Acer saccharum*)
+- Black cherry (*Prunus serotina*)
+- White oak (*Quercus alba*)
+- Northern red oak (*Quercus rubra*)
 
 As Fig. 1 below shows, the number of seedlings for each of the four species is in a similar range.
 
@@ -58,7 +85,7 @@ ggplot(data = trees, mapping = aes(x = Species)) +
        subtitle = "Segmented by species")
 ```
 
-In the research, two controlled conditions for the seedlings were soil sources and light availability. For soil sources, if the soil cores were collected beneath a tree of the same species as the seedling, it is called *conspecific* soil. If a conspecific soil was sterilized, then it is called *sterilized*. If the soil core was collected from beneath a tree of a different specie than the seedling, then it is called *heterospecific}. Fig. 2 shows the distribution of the soil sources segmented by tree species. In Fig. 2, within each type of soil source, tree species are nearly evenly distributed. However, the figure also indicates that Heterospecific soil was more common than Conspecific or Sterilized. 
+In the research, two controlled conditions for the seedlings were soil sources and light availability. For soil sources, if the soil cores were collected beneath a tree of the same species as the seedling, it is called *conspecific* soil. If a conspecific soil was sterilized, then it is called *sterilized*. If the soil core was collected from beneath a tree of a different specie than the seedling, then it is called *heterospecific*. Fig. 2 shows the distribution of the soil sources segmented by tree species. In Fig. 2, within each type of soil source, tree species are nearly evenly distributed. However, the figure also indicates that Heterospecific soil was more common than Conspecific or Sterilized. 
 
 ```{r}
 # change the order of levels in Conspecific to make the plot easier to understand
@@ -283,7 +310,7 @@ The above result indicates that the Harrel’s concordance index (c-index) for t
 
 ## Andy: 4.4 Survival function and Coxph
 
-After preparing data, we can use the `Surv` function on the dataset to create a survival object to be used in various functions. We supply the time and event variables (Time and Event respectively) for survival analysis.
+After exploratory data analysis, we can use the `Surv` function on the dataset to create a survival object to be used in various functions. We supply the time and event variables (Time and Event respectively) for survival analysis.
 
 ```{r Data preparation}
 #tree <- read.csv("Tree_Data.csv") 
@@ -492,7 +519,7 @@ As shown above, the random forest makes survival predictions that yield a c-inde
 
 Similarly, an importance analysis can be performed on the random forest model. Specifically, it can be seen that lignin and phenolics are once again amongst the most important variables, as well as AMF, NSC, and the plot that the tree was planted in. It is clear from these tree-based analyses that the lignin and the phenolics of a given tree are the most indicative of tree survival. This behavior makes sense because lignin and phenolics serve as chemical and physical defense against soil-borne microbes (Wood et. al, 2023). 
 
-# Interpretting these results
+# Interpreting these results
 
 With the information that lignin and phenolics are important variables for tree survival, we now analyze what role these variables have in tree survival. In other words, what quantities of lignin and phenolics influence survival in trees? 
 
