@@ -31,6 +31,7 @@ library(caret) # test of SVM
 library(LiblineaR) # caret SVM testing
 library(kernlab) # caret SVM testing
 library(survivalsvm) # functional SVM 
+library(survminer) # plotting survival curves
 
 # set a seed
 set.seed(1)
@@ -407,18 +408,55 @@ svm_c
 
 
 ## 4.6 Ellie: Single Survival Tree
+```{r}
+## REMOVE THIS CHUNK LATER
+#tree <- read.csv("Tree_Data.csv") 
+tree <- trees
+
+# Remove unwanted variables
+tree_clean <- tree %>% select(-No, -Harvest, -Alive, -Adult)
+
+# Convert all NA EMF values to 0 with researchers' blessing
+tree_clean$EMF[is.na(tree$EMF)] <- 0
+
+# Check for remaining NA values
+str_which(tree_clean$EMF, "NA")
+
+# convert PlantDate in character format to date time object
+tree_clean <- tree_clean %>% 
+  mutate(PlantDate = as.Date(PlantDate)) %>%
+  mutate(PlantDateDay = day(PlantDate)) %>%
+  mutate(PlantDateMonth = month(PlantDate)) %>%
+  select(-PlantDate)
+  # change to standard format(Year-Month-Day)
+
+
+# Factor variables
+tree_clean <- tree_clean %>%
+  mutate(Species = factor(Species)) %>%
+  mutate(Soil = factor(Soil)) %>%
+  mutate(Conspecific = factor(Conspecific)) %>%
+  mutate(Subplot = factor(Subplot)) %>%
+  mutate(Light_Cat = factor(Light_Cat)) %>%
+  mutate(Sterile = factor(Sterile)) %>%
+  mutate(Myco = factor(Myco)) %>%
+  mutate(SoilMyco = factor(SoilMyco))
+
+table(tree_clean$PlantDate)
+```
+
 
 A survival tree to analyze the relationships between variables in the dataset can be implemented by analyzing splits in the data that yield the largest differences in survival. This can be done by comparing the survival outcomes of different categories in a given variable and determining which traits yield the highest chance of survival.
 
 As with our SVM model, we pass in a survival object into our model for the model to make survival predictions. The results of the predictions made from the tree are shown in 
 ```{r}
-surv_tree <- rpart(Surv(Time, Event) ~.-Census, data = tree, model = TRUE)
+surv_tree <- rpart(Surv(Time, Event) ~.-Census, data = tree_clean, control = rpart.control(cp = 0.005), model = TRUE)
 rpart.plot(surv_tree, main = "Fig. 5: Single Decision Tree Example")
 validate(surv_tree)
 ```
 
 
-As shown in Fig. 5, Phenolics and the date that the tree was planted appear to be the variables most linked to tree survival. With use of the "validate" function in the rms package, different control values $k$ were tested and the appropriate $D_{xy}$ values for training and testing were output. The package implements 10-fold cross validation to ensure that the error values accurately represent how well the algorithm might perform on new data. For each attempted $k$, the mean $D_{xy}$ was calculated. One can convert from $D_{xy}$ to the c-index through the relationship
+Fig. 5 highlights an example of a single decision tree to model the tree survival data. It is apparent from this figure that phenolics, EMF, and plant date all play a significant role when the algorithm determines the splitsn within the data that yield the largest changes in survival. With use of the "validate" function in the rms package, different control values $k$ were tested and the appropriate $D_{xy}$ values for training and testing were output. The package implements 10-fold cross validation to ensure that the error values accurately represent how well the algorithm might perform on new data. For each attempted $k$, the mean $D_{xy}$ was calculated. One can convert from $D_{xy}$ to the c-index through the relationship
 $D_{xy} = 2(C-0.5)$, 
 where $C$ is the c-index. 
 
@@ -433,11 +471,17 @@ c_ind
 
 As shown above, the c-index is ~0.74, which means that the associated error is 0.26. This result implicates that the model is performing better than random guessing and specifically can predict with 74% accuracy how long it will take for a tree to die given the reported conditions. This method, however, is susceptible to high variance. Because this model is a single decision tree, there is a lot of uncertainty and a few changes in some of the edge observations could change the way that the model is predicting in a significant manner. This tree might be predicting with 74% survival accuracy in this set of observations, but might perform much differently given a slightly different set of observations. 
 
-## 4.7 Survival Random Forest
+```{r}
+surv_tree$variable.importance
+```
+
+Specifically, we can view and analyze how important each variable in the dataset is in determining tree survival. It is apparent from the above importance analysis that phenolics, tree species, lignin, the day that the tree was planted, myco, and EMF are the most important factors in this prediction. 
+
+## 4.7 Random Survival Forest
 
 A similar model with less variance is the random forest. This model makes use of a collection of "weak-learners" to make predictions on a dataset. These weak-learners are designed to make predictions that are slightly better than random guessing and a majority vote is taken to determine the resulting prediction for a given observation. Because this method uses majority vote, it is subject to less variance than a single tree model. A similar approach can be done for survival analysis on a random forest. Note: 1 observation was omitted, as the reported "event" was unknown. In a similar way as done for the single tree, a survival object is passed into the ranger function and importance is tracked. 
 ```{r}
-rf <- ranger(Surv(Time, Event) ~.-Census, data = tree %>%na.omit(), importance = 'impurity')
+rf <- ranger(Surv(Time, Event) ~.-Census, data = tree_clean %>%na.omit(), importance = 'impurity')
 rf$prediction.error
 rf_c = 1 - rf$prediction.error
 rf_c
@@ -445,6 +489,68 @@ as.data.frame(rf$variable.importance) %>%
   arrange(-rf$variable.importance)
 ```
 As shown above, the random forest makes survival predictions that yield a c-index of $0.70$. This result implicates that the tree is predicting survival times with $70%$ accuracy (and $30%$ error). This is a worse prediction than the one found above for a single decision tree, however, it is important to reiterate that this model is subject to less bias than the single decision tree and might prove to generalize better to new data. 
+
+Similarly, an importance analysis can be performed on the random forest model. Specifically, it can be seen that lignin and phenolics are once again amongst the most important variables, as well as AMF, NSC, and the plot that the tree was planted in. It is clear from these tree-based analyses that the lignin and the phenolics of a given tree are the most indicative of tree survival. This behavior makes sense because lignin and phenolics serve as chemical and physical defense against soil-borne microbes (Wood et. al, 2023). 
+
+# Interpretting these results
+
+With the information that lignin and phenolics are important variables for tree survival, we now analyze what role these variables have in tree survival. In other words, what quantities of lignin and phenolics influence survival in trees? 
+
+To understand the distribution of these variables, the distribution of lignin and phenolics across the dataset were plotted. 
+```{r}
+histogram(tree_clean$Lignin,
+          xlab = "Lignin (%)",
+          ylab = "Percent of Total Dataset",
+          main = "Fig. 6: Distribution of Lignin content across the dataset.")
+```
+```{r}
+histogram(tree_clean$Phenolics,
+          xlab = "Phenolcics (nmol/mg)",
+          ylab = "Percent of Total Dataset",
+          main = "Fig 7: Distribution of Phenolics content across the dataset.")
+```
+The above histograms (Fig. 6 and Fig. 7) portray the dataset's distribution of lignin and phenolics content across trees in the dataet. Both appear to have two groupings with higher and lower content in each of the two variables. 
+
+To analyze the relationship between lignin and phenolics content and tree survival, we have grouped the lignin and phenolics content into three groups for analysis, high, mid, and low content. 
+```{r}
+
+lignin1 <- tree_clean%>%
+  mutate(Lignin= case_when(Lignin>20 ~ "high",
+                            Lignin>10 ~ "mid",
+                            Lignin<10 ~ "low"))
+fit <- survfit(Surv(Time, Event) ~Lignin, data = lignin1)
+
+
+ggsurvplot(fit,
+           xlab = "Time",
+           title = "Fig. 8: Survival Probability for varying lignin 
+           content")
+```
+
+Fig. 8 demonstrates that trees possessing more lignin is indicative of higher survival probability. This conclusion makes sense because more lignin is indicative of higher chemical defense. 
+
+A similar analysis can be conducted for phenolics. 
+```{r}
+pheno <- tree_clean%>%
+  mutate(Phenolics= case_when(Phenolics>3 ~ "high",
+                            Phenolics>0 ~ "mid",
+                            Phenolics<0 ~ "low"))
+p_fit <- survfit(Surv(Time, Event) ~Phenolics, data = pheno)
+
+
+ggsurvplot(p_fit,
+            xlab = "Time",
+           title = "Fig. 9: Survival Probability for varying phenolics 
+           content")
+```
+
+Fig. 9 demonstrates that trees that possess more phenolics have a notably higher chance of survival. This conclusion also makes sense because higher phenolics content is indicative of higher physical defense against soil microbes. 
+
+
+
+
+
+
 
 
 
