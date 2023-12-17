@@ -313,11 +313,9 @@ The above result indicates that the Harrel’s concordance index (c-index) for t
 After exploratory data analysis, we can use the `Surv` function on the dataset to create a survival object to be used in various functions. We supply the time and event variables (Time and Event respectively) for survival analysis.
 
 ```{r Data preparation}
-#tree <- read.csv("Tree_Data.csv") 
-tree <- trees
 
 # Remove unwanted variables
-tree <- tree %>% select(-No, -Harvest, -Alive, -Adult)
+tree <- trees %>% select(-No, -Harvest, -Alive, -Adult)
 
 # Convert all NA EMF values to 0 with researchers' blessing
 tree$EMF[is.na(tree$EMF)] <- 0
@@ -348,7 +346,7 @@ tree <- tree %>%
 tree_surv <- Surv(time=tree$Time, event=tree$Event)
 ```
 
-The survival object can first be used in the `survfit` function. We first implemented this function in class with no covariates, which was indicated with a `1` in the formula term reserved for predictors. The resulting survival curve shows an extremely slight decrease in estimated probability of survival at about 15 days and a sharp decrease at about 25 days. Quick exploration of relevant variables can be achieved via Kaggle. Indeed, just 3 observations carry time values of 14, and all of these seedlings seem to have died based on their event value of 1. Many more trees have a time value of 24.5 days, corresponding to a census value of 7. There are no census values less than 4, which signifies that the researchers did not harvest nor note the death of any seedling prior to 14 days into the growing season.
+The survival object can first be used in the `survfit` function. We first implemented this function in class with no covariates, which was indicated with a `1` in the formula term reserved for predictors. The resulting survival curve shows an extremely slight decrease in estimated probability of survival at about 15 days and a sharp decrease at about 25 days. Quick exploration of relevant variables can be achieved via Kaggle by looking at the variable histograms and dataset columns which are embedded on the page. Indeed, just 3 observations carry time values of 14, and all of these seedlings seem to have died based on their event value of 1. Many more trees have a time value of 24.5 days, corresponding to a census value of 7. There are no census values less than 4, which signifies that the researchers did not harvest nor note the death of any seedling prior to 14 days into the growing season.
 
 Using the rationale that decreases in survival probability relate to censuses when the researchers assessed the mortality of trees and harvested certain individuals, other periods of heightened risk include 42 days (census 12), 45 days (census 13). By this stage of the growing season, probability of survival has decreased to approximately 60%. The probability decreases to approximately 30% before leveling out for the final 40-odd days of the growing season. Due to the fact that seedling survival was not observed each day, it is not likely that all trees which were noted to have died at census 13 died on day 45; some may have died on days 43 and 44. That is the nature of the data, however, and it was noted in class that survival curves take on a stepwise shape.
 
@@ -362,26 +360,33 @@ surv_fit_tree_base <- survfit(tree_surv~1)
 plot(surv_fit_tree_base)
 ```
 
-We can also try fitting covariates to the survival curve. (Coming later)
+We can also try fitting covariates to the survival curve. This can be simpler to do by creating the survival object inside of the survfit function rather than passing in an existing object. One covariate that makes sense to add is the species of the tree, given that the researchers display survival curves for each of the four species in the paper (Figure 2). We can diverge from the method used in class by using the `ggsurvplot` function of the `survminer` package. 
 
-```{r}
-# Survival curve with covariates
+It is abundantly clear from the resulting graph that different species have radically different survival curves. In particular, both oak species (Quercus rubra is red oak and Q. alba is white oak) are essentially always more likely to survive than black cherry (Prunus serotina) or sugar maple (Acer saccharum) seedlings. The latter two species have broadly similar curves which decrease to near-zero survival probability at approximately 70 days. The oak species, however, do not appear to see their survival probabilities fall below approximately 60% at any point in the late growing season. The shapes of all curves do indeed compare favorably to Figure 2 in the original study, which is a positive sign for this visualization. We can discuss why the curves are so different later in the report.
 
+```{r Covariate survival curve}
+# Survival curve with species as covariate
+surv_fit_tree_species <- survfit(Surv(Time, Event) ~ Species,
+                               data = tree)
 
+# Plot the curve
+plot(surv_fit_tree_species)
+
+# Alphabetical order: Acer saccharum, Prunus serotina, Quercus alba, Quercus rubra
+surv_fit_tree_species$n
+
+# Use survminer to visualize plot
+ggsurvplot(surv_fit_tree_species, data=tree)
 ```
 
-The Cox proportional hazards model is also possible to implement using a survival object. Using variables which have been selected to present a signficant p-value. 
+The Cox proportional hazards model is also possible to implement using a survival object. We are choosing to build up a coxph model by inputting one variable at a time to see if the variable is important. Importance of variables can be judged by observing whether the p-value for the variable (or any of its factors if it is a character variable) is significant (≤0.05). All variables currently in the model have significant p-values. 
 
-Outline of section:
-
-Relevance of variables can be judged by placing them in the model and observing whether the p-value for the variable (or any of its factors if it is a character variable) is significant (≤0.05). 
-
-Relevant chr variables include Species, Conspecific, SoilMyco, Sterile.
-Relevant numerical variables include Phenolics.
+Relevant character variables include Plot, Species, Conspecific, Soil, PlantDateMonth, and PlantDateDay.
+Relevant numerical variables include EMF and Phenolics.
 
 ```{r Coxph}
 # Coxph
-coxph_tree <- coxph(Surv(Time, Event) ~ Species + Conspecific + SoilMyco + Phenolics, Sterile,
+coxph_tree <- coxph(Surv(Time, Event) ~ Species + Conspecific + SoilMyco + Sterile + Light_ISF + Soil + EMF + Phenolics + PlantDateMonth + PlantDateDay + Plot,
                       data=tree)
 
 coxph_tree
@@ -409,7 +414,7 @@ svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), me
 svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="svmBoundrangeString")
 ```
 
-We can instead use the `survivalsvm` package to predict survival time and receive a concordance index value to compare with other models. When predicting using a training subset and a testing subset, the C-index value for survivalsvm is quite high.
+We can instead use the `survivalsvm` package to predict survival time and receive a concordance index value to compare with other models. When predicting using a training subset and a testing subset, the C-index value for survivalsvm is quite high at approximately 0.97. 
 
 ```{r survivalSVM}
 set.seed(1)
@@ -432,7 +437,6 @@ svm_c <- conindex(svm_pred, test$Time)
 
 svm_c
 ```
-
 
 ## 4.6 Ellie: Single Survival Tree
 ```{r}
