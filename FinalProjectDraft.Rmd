@@ -381,18 +381,20 @@ ggsurvplot(surv_fit_tree_species, data=tree)
 
 The Cox proportional hazards model is also possible to implement using a survival object. We are choosing to build up a coxph model by inputting one variable at a time to see if the variable is important. Importance of variables can be judged by observing whether the p-value for the variable (or any of its factors if it is a character variable) is significant (≤0.05). All variables currently in the model have significant p-values. 
 
-Relevant character variables include Plot, Species, Conspecific, Soil, PlantDateMonth, and PlantDateDay.
+Relevant character variables include Plot, Species, Conspecific, Soil, PlantDateMonth, and PlantDateDay. For these variables, at least one of their factors has a p-value below 0.05. The factors which are displayed for the object are being compared to the baseline factor, which is the level not shown in the output. The baseline is the first factor when the list of factors is sorted alphabetically. 
+
+[ Could explain each significant factor here ]
+
 Relevant numerical variables include EMF and Phenolics.
 
 ```{r Coxph}
 # Coxph
-coxph_tree <- coxph(Surv(Time, Event) ~ Species + Conspecific + SoilMyco + Sterile + Light_ISF + Soil + EMF + Phenolics + PlantDateMonth + PlantDateDay + Plot,
-                      data=tree)
+coxph_tree <- coxph(Surv(Time, Event) ~ Species + Conspecific + SoilMyco + Sterile + Soil + EMF + Phenolics + PlantDateMonth +
+                      PlantDateDay + Plot, data=tree)
 
 coxph_tree
 
 # The risk is only 67% of the original for a 1 unit increase in phenolics
-# Good vars: Species, Con, SoilMyco, Phenolics
 ```
 
 ## 4.5 Andy: SVM with survival object
