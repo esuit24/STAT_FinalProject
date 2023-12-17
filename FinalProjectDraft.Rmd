@@ -369,9 +369,6 @@ It is abundantly clear from the resulting graph that different species have radi
 surv_fit_tree_species <- survfit(Surv(Time, Event) ~ Species,
                                data = tree)
 
-# Plot the curve
-plot(surv_fit_tree_species)
-
 # Alphabetical order: Acer saccharum, Prunus serotina, Quercus alba, Quercus rubra
 surv_fit_tree_species$n
 
@@ -379,17 +376,27 @@ surv_fit_tree_species$n
 ggsurvplot(surv_fit_tree_species, data=tree)
 ```
 
-The Cox proportional hazards model is also possible to implement using a survival object. We are choosing to build up a coxph model by inputting one variable at a time to see if the variable is important. Importance of variables can be judged by observing whether the p-value for the variable (or any of its factors if it is a character variable) is significant (≤0.05). All variables currently in the model have significant p-values. 
+The Cox proportional hazards model is also possible to implement using a survival object. We are choosing to build up a `coxph` model by inputting one variable at a time to see if the variable is important. Importance of variables can be judged by observing whether the p-value for the variable (or any of its factors if it is a character variable) is significant (≤0.05). All variables currently in the model have at least one significant p-value, in the case of chr variables. 
 
-Relevant character variables include Plot, Species, Conspecific, Soil, PlantDateMonth, and PlantDateDay. For these variables, at least one of their factors has a p-value below 0.05. The factors which are displayed for the object are being compared to the baseline factor, which is the level not shown in the output. The baseline is the first factor when the list of factors is sorted alphabetically. 
+Relevant chr variables include Species, Soil, and SoilMyco. The factors which are displayed for the object are being compared to the baseline factor, which is the level not shown in the output. The baseline is the first factor when the list of factors is sorted alphabetically. 
 
-[ Could explain each significant factor here ]
+As an example of interpreting factors, the factor of the variable Species which pertains to northern red oak (*Q. rubra*) individuals is significant when compared to the baseline of sugar maple (*A. saccharum*) individuals (the only species which is missing from the `coxph` function output; p < 0.02). The negative coefficient suggests that the hazard for this factor is decreased compared to the baseline. When we look at `survminer` plot above, this outcome makes sense; northern red oak had a survival curve which nearly always had higher survival probability values when compared to the curve for sugar maple. 
 
-Relevant numerical variables include EMF and Phenolics.
+Other significant results include:
+- For the "EMF" factor of the variable "SoilMyco", proportional hazard is higher when compared to the baseline factor of "AMF".
+- For the sugar maple (A. saccharum) factor of the variable "Soil", proportional hazard is higher compared to the baseline factor of *Acer rubrum* (red maple). No red maple seedlings were actually planted, but any seedlings grown in soil from soil cores which were collected beneath red maple trees are part of this factor. 
+
+Relevant numerical variables include Plot, EMF, Phenolics, PlantDateMonth, and PlantDateDay. For numerical variables, significance indicates that a one-unit increase in value changes hazard according to the value and direction of the coefficient. 
+
+Significant results include:
+- A one-unit increase in the value of the "Plot" variable increases hazard by a very slight margin. This may not be deemed to be very important due to the magnitude of the coefficient. Notwithstanding, we may surmise that this variable should ideally be insignificant for experimental design.
+- A one-unit increase in the value of the "EMF" variable decreases hazard by a small amount.
+- A one-unit increase in the value of the "Phenolics" variable also decreases hazard, but it does so by a larger amount.
+- A one day increase in planting date increases hazard very slightly, and a one month increase in planting date increases hazard to a much greater degree than all other significant results here. This is slightly confusing given the methods section of the article, which implies that all planting occurred in June 2018. The distribution of values for the variable, however, makes clear that there are many seedlings which were planted in May 2018. The Cox model result here could therefore be suggesting that seedlings planted in June had a higher risk of death than those planted in May.
 
 ```{r Coxph}
 # Coxph
-coxph_tree <- coxph(Surv(Time, Event) ~ Species + Conspecific + SoilMyco + Sterile + Soil + EMF + Phenolics + PlantDateMonth +
+coxph_tree <- coxph(Surv(Time, Event) ~ Species + SoilMyco + Sterile + Soil + EMF + Phenolics + PlantDateMonth +
                       PlantDateDay + Plot, data=tree)
 
 coxph_tree
