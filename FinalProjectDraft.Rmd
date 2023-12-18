@@ -402,7 +402,7 @@ Relevant numerical variables include Plot, EMF, Phenolics, PlantDateMonth, and P
 Significant results include:
 - A one-unit increase in the value of the "Plot" variable increases hazard by a very slight margin. This may not be deemed to be very important due to the magnitude of the coefficient. Notwithstanding, we may surmise that this variable should ideally be insignificant for experimental design.
 - A one-unit increase in the value of the "EMF" variable decreases hazard by a small amount.
-- A one-unit increase in the value of the "Phenolics" variable also decreases hazard, but it does so by a larger amount.
+- A one-unit increase in the value of the "Phenolics" variable also decreases hazard, but it does so by a larger amount. The coefficient can be interpreted with the idea that a seedling with a value of phenolics one unit higher than another seedling seems to have only 67% of the risk.
 - A one day increase in planting date increases hazard very slightly, and a one month increase in planting date increases hazard to a much greater degree than all other significant results here. This is slightly confusing given the methods section of the article, which implies that all planting occurred in June 2018. The distribution of values for the variable, however, makes clear that there are many seedlings which were planted in May 2018. The Cox model result here could therefore be suggesting that seedlings planted in June had a higher risk of death than those planted in May.
 
 ```{r Coxph}
@@ -411,20 +411,18 @@ coxph_tree <- coxph(Surv(Time, Event) ~ Species + SoilMyco + Sterile + Soil + EM
                       PlantDateDay + Plot, data=tree)
 
 coxph_tree
-
-# The risk is only 67% of the original for a 1 unit increase in phenolics
 ```
 
 ## 4.4 Andy: SVM with survival object
 
 We have used support vector machines for datasets with many possible predictor variables. It thus seems prudent to try to use SVM for this problem. Upon testing SVM with the `caret` package, which we have done before in class using a value of "svmLinear2" for the `method` argument, the `train` function does not seem to be able to work. This is likely because we have passed in a survival object as `x` instead of the typical single predictor, for the error is "Invalid operation on a survival time". Altering the method to one of the other SVM methods included as options in caret also does not work, and the `e1071` package itself predictably fails as well. 
 
-```{r SVM}
+```{r SVM, eval = FALSE}
 # Caret package does not support survival models
-svm_tree <- train(Surv(Time, Event)~., data=tree %>% na.omit(), method="svmLinear2")
+#svm_tree <- train(Surv(Time, Event)~., data=tree %>% na.omit(), method="svmLinear2")
 
 # e1071 package also throws an error
-svm_tree <- svm(Surv(Time, Event)~.-PlantDateYear, data=tree)
+#svm_tree <- svm(Surv(Time, Event)~.-PlantDateYear, data=tree)
 
 # Other caret methods testing
 svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="svmPoly")
@@ -447,7 +445,7 @@ train <- tree[train_rows,]
 test <- tree[-train_rows,]
 
 # survivalsvm function
-svm_tree <- survivalsvm(Surv(Time, Event)~.-c(PlantDateYear, Census), data=train, type="vanbelle1", diff.meth="makediff1", gamma.mu=1)
+svm_tree <- survivalsvm(Surv(Time, Event)~.-Census, data=train, type="vanbelle1", diff.meth="makediff1", gamma.mu=1)
 
 # predictions using the resulting object
 svm_pred <- predict(svm_tree, newdata=test)
@@ -545,9 +543,6 @@ Similarly, an importance analysis can be performed on the random forest model. S
 
 ### Interpreting these results
 
-[We should also mention that Lignin was not found to be significant for the Coxph model.]
-[Also, we should look for what the researchers found with respect to lignin and phenolics.]
-
 With the information that lignin and phenolics are important variables for tree survival, we now analyze what role these variables have in tree survival. In other words, what quantities of lignin and phenolics influence survival in trees? 
 
 To understand the distribution of these variables, the distribution of lignin and phenolics across the dataset were plotted. 
@@ -563,7 +558,7 @@ histogram(tree_clean$Phenolics,
           ylab = "Percent of Total Dataset",
           main = "Fig 7: Distribution of Phenolics content across the dataset.")
 ```
-The above histograms (Fig. 6 and Fig. 7) portray the dataset's distribution of lignin and phenolics content across trees in the dataet. Both appear to have two groupings with higher and lower content in each of the two variables. 
+The above histograms (Fig. 6 and Fig. 7) portray the dataset's distribution of lignin and phenolics content across trees in the dataset. Both appear to have two groupings with higher and lower content in each of the two variables. 
 
 To analyze the relationship between lignin and phenolics content and tree survival, we have grouped the lignin and phenolics content into three groups for analysis, high, mid, and low content. 
 ```{r}
@@ -602,7 +597,7 @@ Fig. 9 demonstrates that trees that possess more phenolics have a notably higher
 
 # Conclusion
 
-From the above results, we have demonstrated the various qualities that affect tree survival. It has been demonstrated from our survival fit methods that tree species is an important factor for tree survival, as different species contain different survival characteristics. In particular cherry and maple seedlings are generally at higher risk of death than their oak counterparts. It was also found in several statistical learning methods that larger presence of phenolics is indicative of higher overall survival probability. As found in our tree-based statistical learning methods, the presence of high of physical defense (phenoloics) and chemical defense (lignin) are indicative of higher survival probability and thus decreased hazard over time. 
+From the above results, we have demonstrated the various qualities that affect tree survival. It has been demonstrated from our survival fit methods that tree species is an important factor for tree survival, as different species contain different survival characteristics. In particular cherry and maple seedlings are generally at higher risk of death than their oak counterparts. It was also found in several statistical learning methods that larger presence of phenolics is indicative of higher overall survival probability. As found in our tree-based statistical learning methods, the presence of high of physical defense (phenolics) and chemical defense (lignin) are indicative of higher survival probability and thus decreased hazard over time. 
 
 
 
