@@ -112,12 +112,11 @@ ggplot(data = tree_EDA, mapping = aes(x = Conspecific, fill = Species)) +
 
 ### Functional traits
 
-The researchers cite previous literature which investigates the idea of functional traits -- characteristics of a tree which could have an impact on its growth -- interfacing with PSFs. The main traits they introduce are phenolics, lignin, and nonstructural carbohydrates (NSCs), but they do not go into much detail on the context of these terms. Phenolics are an example of a secondary metabolite, a class of chemical which is not found in all plant cells but which can sometimes be produced in response to herbivory. A group of phenolics which has this function is the tannins, which provide a bitter taste as a deterrent to herbivores which consume the leaves (Evert and Eichhorn 2013). Lignin is in fact another type of phenolic, but it is instead known for its provision of structure to the cell walls of plant cells (Evert and Eichhorn 2013). Last, NSCs are carbohydrates such as sugars and starch (Zhang et al. 2022) which can support the plant in times of drought (Tomasella et al. 2019) and can help respond to damage in plant parts (Dietze et al. 2014). Wood and colleagues state that these traits could be considered defensive characteristics against the threat of pathogens (Wood et al. 2023).
+The researchers cite previous literature which investigates the idea of functional traits -- characteristics of a tree which could have an impact on its growth -- interfacing with PSFs. The main traits they introduce are *phenolics*, *lignin*, and nonstructural carbohydrates (*NSC*s), but they do not go into much detail on the context of these terms. Phenolics are an example of a secondary metabolite, a class of chemical which is not found in all plant cells but which can sometimes be produced in response to herbivory. A group of phenolics which has this function is the tannins, which provide a bitter taste as a deterrent to herbivores which consume the leaves (Evert and Eichhorn 2013). Lignin is in fact another type of phenolic, but it is instead known for its provision of structure to the cell walls of plant cells (Evert and Eichhorn 2013). Last, NSCs are carbohydrates such as sugars and starch (Zhang et al. 2022) which can support the plant in times of drought (Tomasella et al. 2019) and can help respond to damage in plant parts (Dietze et al. 2014). Wood and colleagues state that these traits could be considered defensive characteristics against the threat of pathogens (Wood et al. 2023).
 
 ### AMF and EMF
 
-The researchers also include that the percentage of the root of a tree which has been "colonized" by mycorrhizal fungi could be considered a defensive trait (Wood et al. 2023). Mycorrhizal fungi are split into arbuscular mycorrhizal fungi (AMF) and ectomycorrhizal fungi (EMF). The former, also referred to as endomycorrhizal, are fungi which form associations with plants by entering root cells and growing inside of them. The latter are fungi which instead grow around roots (Evert and Eichhorn 2013). Wood and colleagues hold that a tree which has a higher AMF or EMF percentage may be afforded greater protection against pathogens. 
-
+The researchers also include that the percentage of the root of a tree which has been "colonized" by mycorrhizal fungi could be considered a defensive trait (Wood et al. 2023). Mycorrhizal fungi are split into arbuscular mycorrhizal fungi (*AMF*) and ectomycorrhizal fungi (*EMF*). The former, also referred to as endomycorrhizal, are fungi which form associations with plants by entering root cells and growing inside of them. The latter are fungi which instead grow around roots (Evert and Eichhorn 2013). Wood and colleagues hold that a tree which has a higher AMF or EMF percentage may be afforded greater protection against pathogens. 
 We noticed that many % EMF values, which is one of the variables in the dataset, had been recorded as NA. We contacted Dr. Wood, who stated that tree species in the study which associated with AMF do not historically associate with EMF, so she did not even measure % EMF in these trees. For this reason, she stated that the NAs could be replaced with 0s as a form of imputation (Dr. Katherine Wood, personal communication, 12/11/2023). We opted to make this change to the data below to have our analyses include much more data. This observation of the researchers is consistent with Mushinski et al. (2020), who state that many tree species in the Eastern U.S. only associate with one of these types of fungi. 
 
 ### Tree species
@@ -435,7 +434,7 @@ svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), me
 svm_tree <- train(Surv(Time, Event)~.-PlantDateYear, data=tree %>% na.omit(), method="svmBoundrangeString")
 ```
 
-We can instead use the `survivalsvm` package to predict survival time and receive a concordance index value to compare with other models. When predicting using a training subset and a testing subset, the C-index value for survivalsvm is quite high at approximately 0.97. 
+We can instead use the `survivalsvm` package to predict survival time and receive a concordance index value to compare with other models. When predicting using a training subset and a testing subset, the C-index value for survivalsvm is quite high at approximately 0.97. Unfortunately, the `varImp` function cannot be applied to this model, as we are not using the caret package. A [paper](https://journal.r-project.org/archive/2018/RJ-2018-005/RJ-2018-005.pdf) describing the package also does not contain a mention of variable importance.
 
 ```{r survivalSVM}
 set.seed(1)
@@ -545,6 +544,9 @@ As shown above, the random forest makes survival predictions that yield a c-inde
 Similarly, an importance analysis can be performed on the random forest model. Specifically, it can be seen that lignin and phenolics are once again amongst the most important variables, as well as AMF, NSC, and the plot that the tree was planted in. It is clear from these tree-based analyses that the lignin and the phenolics of a given tree are the most indicative of tree survival. This behavior makes sense because lignin and phenolics serve as chemical and physical defense against soil-borne microbes (Wood et. al, 2023). 
 
 ### Interpreting these results
+
+[We should also mention that Lignin was not found to be significant for the Coxph model.]
+[Also, we should look for what the researchers found with respect to lignin and phenolics.]
 
 With the information that lignin and phenolics are important variables for tree survival, we now analyze what role these variables have in tree survival. In other words, what quantities of lignin and phenolics influence survival in trees? 
 
