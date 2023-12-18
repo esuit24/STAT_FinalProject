@@ -597,21 +597,4 @@ Fig. 9 demonstrates that trees that possess more phenolics have a notably higher
 
 # Conclusion
 
-From the above results, we have demonstrated the various qualities that affect tree survival. It has been demonstrated from our survival fit methods that tree species is an important factor for tree survival, as different species contain different survival characteristics. In particular cherry and maple seedlings are generally at higher risk of death than their oak counterparts. It was also found in several statistical learning methods that larger presence of phenolics is indicative of higher overall survival probability. As found in our tree-based statistical learning methods, the presence of high of physical defense (phenolics) and chemical defense (lignin) are indicative of higher survival probability and thus decreased hazard over time. 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+From the above results, we have demonstrated the various qualities that affect tree survival. It has been demonstrated from our survival fit methods that tree species is an important factor for tree survival, as different species contain different survival characteristics. In particular cherry and maple seedlings are generally at higher risk of death than their oak counterparts. It was also found in several statistical learning methods that larger presence of phenolics is indicative of higher overall survival probability. As found in our tree-based statistical learning methods, the presence of high of physical defense (phenolics) and chemical defense (lignin) are indicative of higher survival probability and thus decreased hazard over time. Overall, we found the survivalsvm model to have the highest C-index, which indicates that it may be the best model with respect to predictions of survival. However, we also note that tree-based methods helpfully allowed us to see variable importance, which is quite relevant for any report which seeks to identify which of the many variables in the dataset contribute meaningfully to a model.
