@@ -600,6 +600,10 @@ ggsurvplot(p_fit,
 
 Fig. 9 demonstrates that trees that possess more phenolics have a notably higher chance of survival. This conclusion also makes sense because higher phenolics content is indicative of higher physical defense against soil microbes. 
 
+# Conclusion
+
+From the above results, we have demonstrated the various qualities that affect tree survival. It has been demonstrated from our survival fit methods that tree species is an important factor for tree survival, as different species contain different survival characteristics. In particular cherry and maple seedlings are generally at higher risk of death than their oak counterparts. It was also found in several statistical learning methods that larger presence of phenolics is indicative of higher overall survival probability. As found in our tree-based statistical learning methods, the presence of high of physical defense (phenoloics) and chemical defense (lignin) are indicative of higher survival probability and thus decreased hazard over time. 
+
 
 
 
