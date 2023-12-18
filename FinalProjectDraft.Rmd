@@ -494,7 +494,7 @@ tree_clean <- tree_clean %>%
   mutate(Myco = factor(Myco)) %>%
   mutate(SoilMyco = factor(SoilMyco))
 
-table(tree_clean$PlantDate)
+#table(tree_clean$PlantDate)
 ```
 
 
@@ -508,7 +508,7 @@ validate(surv_tree)
 ```
 
 
-Fig. 5 highlights an example of a single decision tree to model the tree survival data. It is apparent from this figure that phenolics, EMF, and plant date all play a significant role when the algorithm determines the splits within the data that yield the largest changes in survival. With use of the "validate" function in the rms package, different control values $k$ were tested and the appropriate $D_{xy}$ values for training and testing were output. The package implements 10-fold cross validation to ensure that the error values accurately represent how well the algorithm might perform on new data. For each attempted $k$, the mean $D_{xy}$ was calculated. One can convert from $D_{xy}$ to the c-index through the relationship
+Fig. 5 highlights an example of a single decision tree to model the tree survival data. It is apparent from this figure that phenolics, the type of soil, and plant date all play a significant role when the algorithm determines the splits within the data that yield the largest changes in survival. With use of the "validate" function in the rms package, different control values $k$ were tested and the appropriate $D_{xy}$ values for training and testing were output. The package implements 10-fold cross validation to ensure that the error values accurately represent how well the algorithm might perform on new data. For each attempted $k$, the mean $D_{xy}$ was calculated. One can convert from $D_{xy}$ to the c-index through the relationship
 $D_{xy} = 2(C-0.5)$, 
 where $C$ is the c-index. 
 
